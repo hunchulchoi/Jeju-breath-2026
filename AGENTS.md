@@ -18,8 +18,17 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 | --- | --- | --- |
 | `docs/PRD.md` | 개발 요구사항 (기준 문서) | 동작·API·스키마가 바뀌면 같은 커밋에서 |
 | `docs/기획서.md` | 기획 배경·위험 분석 | 기획 방향이 바뀔 때 |
-| `docs/개발기록.md` | 체크포인트별 기록 (무엇을, 왜, 리뷰 결과, 남은 일) | 커밋할 때마다 |
+| Forgejo 위키 `개발기록` | 체크포인트별 기록 (무엇을, 왜, 리뷰 결과, 서버에서 바꾼 것, 남은 일) | 커밋할 때마다 |
 | `README.md` | 실행 방법·명령·구성 | 실행 방법이 바뀌면 |
+
+### 공개 저장소에 넣지 않는 것
+
+이 저장소는 GitHub에 공개로 올라간다. 서버 주소, 인프라 설정 변경, 스택 번호, 내부 경로처럼 인프라를 드러내는 내용은 `docs/`에 쓰지 않고 Forgejo 위키(내부망 전용)에 쓴다.
+
+- 위키 수정: `git clone ssh://git@<forgejo-host>:2222/choihunchul/jeju-breath.wiki.git`
+  - 개발기록 파일 이름은 `%EA%B0%9C%EB%B0%9C%EA%B8%B0%EB%A1%9D.md`('개발기록'을 URL 인코딩한 이름)다.
+  - 맨 위에 새 항목을 추가하고 push한다.
+- 위키 수정은 감독이 커밋할 때 함께 한다. 서브에이전트는 위키를 고치지 않는다.
 
 ## 작업 방식
 
@@ -31,7 +40,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **리뷰**: 체크포인트마다 커밋 전에 두 가지를 거친다.
   1. 감독이 diff를 직접 읽고 확인
   2. Codex 리뷰: `codex review --uncommitted` (지시문을 함께 줄 수 없다). 특정 부분을 집중해서 봐야 하면 `codex exec -s read-only "<리뷰 지시>"`를 추가로 돌린다.
-  지적을 고치지 않기로 하면 그 이유를 `docs/개발기록.md`에 남긴다.
+  지적을 고치지 않기로 하면 그 이유를 위키 `개발기록`에 남긴다.
 
 ## 체크포인트와 커밋
 
@@ -41,7 +50,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   2. 리뷰 두 가지 (감독 직접 + Codex)
   3. 지적 반영 → 다시 `npm test`, `npm run typecheck`
   4. 반영한 수정이 작지 않으면 수정분을 다시 리뷰 (감독 직접 + `codex review --uncommitted`)
-  5. `npm run build` 통과 → `docs/개발기록.md` 갱신 → 커밋
+  5. `npm run build` 통과 → 위키 `개발기록` 갱신 → 커밋
 - 커밋되는 최종 코드는 리뷰를 거친 상태여야 한다. 리뷰 뒤에 리뷰받지 않은 큰 변경을 끼워 넣지 않는다.
 - 커밋 메시지는 한국어. 첫 줄에 요약, 본문에 변경 요점.
 - 서브에이전트와 Codex는 커밋하지 않는다. 커밋은 감독만 한다.
@@ -51,7 +60,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **배포 = 태그**: `vMAJOR.MINOR.PATCH` 태그를 `forgejo`에 push하면 stage가 자동으로 다시 빌드된다 (Forgejo 웹훅 → Portainer 스택 웹훅). `main` push만으로는 배포되지 않는다.
   - 순서: `main` push → `git tag -a vX.Y.Z -m "<요약>"` → `git push forgejo vX.Y.Z` → `git push origin main --tags`
   - Portainer는 태그가 아니라 `main`의 최신 커밋을 빌드한다. 그래서 태그는 `main`의 최신 커밋에 붙인다.
-  - 배포 뒤 https://breath.devfor.link 응답을 확인하고 `docs/개발기록.md`에 태그를 적는다.
+  - 배포 뒤 https://breath.devfor.link 응답을 확인하고 위키 `개발기록`에 태그를 적는다.
 - `.env.local`과 비밀값은 커밋하지 않는다.
 
 ## 코드 규칙

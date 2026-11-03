@@ -15,6 +15,6 @@
    - 개인정보, 동시성처럼 집중해서 볼 부분이 있으면 `codex exec -s read-only -o <결과파일> "<리뷰 지시>"`도 함께 돌린다.
 6. 두 리뷰의 지적을 반영한다. 반영 작업도 서브에이전트에 맡긴다. 고치지 않는 지적은 그 이유를 개발기록에 남긴다.
 7. 반영한 수정이 작지 않으면 수정분을 4~5단계로 다시 리뷰한다.
-8. `npm test`, `npm run typecheck`, `npm run build`를 통과시키고, `docs/개발기록.md`에 체크포인트를 추가한 뒤 커밋한다.
+8. `npm test`, `npm run typecheck`, `npm run build`를 통과시키고, Forgejo 위키 `개발기록`에 체크포인트를 추가(위키 저장소 push)하고 커밋한다.
 
 참고: `.claude/agents/`의 서브에이전트 정의는 세션을 새로 시작해야 등록된다. 등록 전에는 같은 지시를 general-purpose 에이전트에 `model: sonnet` 또는 `haiku`로 준다.
