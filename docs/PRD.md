@@ -255,6 +255,15 @@ CREATE TABLE report_photos (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- 카카오 스킬이 받은 문장 (9.2). 링크의 token으로만 열고, 30분 안에 한 번만 쓴다.
+CREATE TABLE kakao_drafts (
+  token       TEXT PRIMARY KEY,                -- randomBytes(16) base64url, 링크에만 들어감
+  user_hash   TEXT NOT NULL,                   -- hashUserId("kakao:" + botUserKey). 원래 키는 저장하지 않음
+  text_masked TEXT NOT NULL,                   -- 개인정보 마스킹한 문장
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  used_at     TIMESTAMPTZ                      -- 저장 성공 시 같은 트랜잭션에서 기록
+);
+
 CREATE TABLE location_failures (
   day   TEXT PRIMARY KEY,                      -- YYYY-MM-DD
   count INTEGER NOT NULL DEFAULT 0
@@ -275,12 +284,12 @@ CREATE TABLE location_failures (
 | 메서드 | 경로 | 설명 |
 | --- | --- | --- |
 | POST | `/api/reports/extract` | `{ text }` → AI 추출 결과 `{ intensity, odor_type, symptoms, confidence, needs_question }` |
-| POST | `/api/reports` | `{ user_id, text, lat, lng, accuracy, intensity, intensity_src, odor_type, symptoms, confidence }` → 검증·저장 → `{ id, merged, needs_review, today_nearby_count, photo }`. lat/lng 없으면 400. 사진을 붙이면 multipart (`data`: 위 JSON 문자열, `photo`: 이미지) |
+| POST | `/api/reports` | `{ user_id, text, lat, lng, accuracy, intensity, intensity_src, odor_type, symptoms, confidence }` → 검증·저장 → `{ id, merged, needs_review, today_nearby_count, photo }`. lat/lng 없으면 400. 카카오 링크에서 온 제보는 `draft_token`을 함께 보내며(`user_id`·`text`는 무시, 서버의 초안 값 사용), 초안이 없거나 만료·사용됐으면 410 `{ error }`. 위치 실패(422)·400은 초안을 소비하지 않음. 사진을 붙이면 multipart (`data`: 위 JSON 문자열, `photo`: 이미지) |
 | GET | `/api/photos/{id}` | 공개 가능한 제보 사진 (확인 필요 제보는 404) |
 | POST | `/api/location-failures` | 본문 없음. 오늘 날짜 카운트 +1 |
 | GET | `/api/reports?date=YYYY-MM-DD` | 해당 날짜 제보 목록(격자 좌표만, `user_hash` 제외, `photo_ids` 포함) |
 | GET | `/api/summary?date=YYYY-MM-DD` | `{ total, high_intensity, location_failures }` |
-| POST | `/api/kakao/skill` | (P1) 카카오 오픈빌더 스킬 엔드포인트, 9.2 참고 |
+| POST | `/api/kakao/skill` | (P1) 카카오 오픈빌더 스킬. `x-skill-secret` 헤더 필수(없거나 틀리면 401, 서버에 `KAKAO_SKILL_SECRET`이 없으면 503). 문장을 마스킹해 초안으로 저장하고 `textCard`(웹링크 버튼)로 회신. AI는 부르지 않음. 9.2 참고 |
 
 PoC의 `user_id`는 브라우저 localStorage에 만든 랜덤 UUID. 서버에서 해시 후 저장, 원본은 저장하지 않는다.
 
@@ -302,12 +311,24 @@ PoC의 `user_id`는 브라우저 localStorage에 만든 랜덤 UUID. 서버에�
 - 연동 시: 오픈빌더 스킬이 문장을 받으면 [위치 확인하고 제보하기] 웹 링크 버튼으로 회신 → 웹 페이지에서 브라우저 위치를 받아 같은 `/api/reports`로 저장
 - 확인 필요: 챗봇 메시지만으로 기기 GPS를 받을 수 있는지, 스킬 응답 시간 제한과 AI 호출 시간. 11/3 저녁에 실제 기기로 시험
 
+구현 (`lib/kakao.ts`, `app/api/kakao/skill/route.ts`):
+
+1. 스킬은 5초 제한 때문에 AI를 부르지 않는다. 발화(500자 이내)를 마스킹해 `kakao_drafts`에 저장하고 token을 만든다. 비었거나 500자를 넘으면 `simpleText`로 안내만 한다.
+2. 회신은 `textCard`: 마스킹한 문장 인용 + 안내, 버튼 [위치 확인하고 제보하기](`${PUBLIC_BASE_URL}/report?d=<token>`)와 [오늘 지도 보기](`/map`). 링크에는 token만 들어가고 문장은 없다.
+3. `/report?d=<token>`: 서버가 초안을 확인해 문장을 채운 채 '위치 확인' 단계부터 시작하고, 이후는 기존 흐름(AI 추출 → 필요하면 강도 질문 → 저장)이다. `report_started`는 스킬이 센다. 만료된 링크면 입력 화면에 안내를 보인다. 사진은 입력 단계에만 있어 카카오 경로에서는 붙이지 않는다.
+4. 저장 시 제보자는 `hashUserId("kakao:" + botUserKey)`, 문장은 초안 값을 쓴다. 초안은 저장과 같은 트랜잭션에서 사용 처리(`used_at`)해 두 번 쓸 수 없다. 유효기간 30분, 하루 지난 초안은 스킬 호출 때 삭제한다. botUserKey 원문은 저장하지 않는다.
+5. 보안: 스킬 요청은 `X-Skill-Secret` 헤더가 `KAKAO_SKILL_SECRET`과 같아야 한다(상수 시간 비교). 발화·사용자 키는 로그에 남기지 않는다.
+
+오픈빌더 설정: 스킬 URL `https://<배포주소>/api/kakao/skill`, 헤더 `X-Skill-Secret: <KAKAO_SKILL_SECRET 값>`, 메소드 POST. 폴백 블록(또는 모든 발화)의 봇 응답을 이 스킬로 연결하고 스킬데이터 사용으로 설정한다.
+
 ### 9.3 환경변수
 
 ```
 ANTHROPIC_API_KEY=
 USER_HASH_SALT=
 DEMO_MODE=true
+KAKAO_SKILL_SECRET=   # 오픈빌더 스킬 호출 비밀 헤더 값. 비어 있으면 스킬이 503
+PUBLIC_BASE_URL=      # 카카오 링크의 바탕 주소 (https://<배포주소>). 없으면 요청 주소
 ```
 
 ### 9.4 디렉터리 [권장]
@@ -330,7 +351,7 @@ eval/run.ts
 
 ## 10. 화면 요구사항
 
-공통: 모바일 우선, 본문 18px 이상, 버튼 높이 56px 이상, 한 화면 한 단계, "\~해요"체, 상단 로고(냄새 물결 + 지도 격자 심볼) 반복, 시연 모드 배지.
+공통: 모바일 우선, 본문 18px 이상, 버튼 높이 56px 이상, 한 화면 한 단계, "\~해요"체, 상단 로고(제주 오름 + 바람 심볼) 반복, 같은 심볼의 파비콘·홈 화면 아이콘, 시연 모드 배지.
 
 | 화면 | 제목·안내 | 입력 | 버튼 | 결과 |
 | --- | --- | --- | --- | --- |
