@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "./pg";
-import { blockNameOf, buildSkillResponse, checkSkillSecret, GUIDE_DESCRIPTION, GUIDE_TITLE, SKILL_TITLE, SKILL_DESCRIPTION } from "@/lib/kakao";
+import { blockNameOf, buildSkillResponse, skillLogFields, checkSkillSecret, GUIDE_DESCRIPTION, GUIDE_TITLE, SKILL_TITLE, SKILL_DESCRIPTION } from "@/lib/kakao";
 
 let db: Awaited<ReturnType<typeof testDb>>;
 beforeAll(async () => {
@@ -93,5 +93,16 @@ describe("블록별 문구", () => {
     expect(card(buildSkillResponse("https://x", blockNameOf({ userRequest: { block: { name: "폴백 블록" } } }))).title).toBe(SKILL_TITLE);
     expect(card(buildSkillResponse("https://x", blockNameOf(null))).description).toBe(SKILL_DESCRIPTION);
     expect(GUIDE_DESCRIPTION).toContain("200m");
+  });
+});
+
+describe("skillLogFields", () => {
+  it("블록 이름과 surface만 꺼내고 발화·사용자 정보는 넣지 않는다", () => {
+    const body = { userRequest: { utterance: "010-1234-5678 냄새", user: { id: "user-key-123" }, block: { name: "이용 안내" }, params: { surface: "Kakaotalk.plusfriend" } } };
+    const f = skillLogFields(body);
+    expect(f).toEqual({ block: "이용 안내", surface: "Kakaotalk.plusfriend" });
+    expect(JSON.stringify(f)).not.toContain("user-key-123");
+    expect(JSON.stringify(f)).not.toContain("010");
+    expect(skillLogFields(null)).toEqual({ block: "", surface: "" });
   });
 });

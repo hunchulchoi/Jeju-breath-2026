@@ -1,5 +1,6 @@
 import { error, json } from "@/lib/http";
-import { blockNameOf, buildSkillResponse, checkSkillSecret } from "@/lib/kakao";
+import { blockNameOf, buildSkillResponse, checkSkillSecret, skillLogFields } from "@/lib/kakao";
+import { toSeoulISO } from "@/lib/time";
 
 /**
  * 카카오 오픈빌더 스킬. 발화와 사용자 키는 읽지도 저장하지도 않고,
@@ -18,5 +19,7 @@ export async function POST(req: Request) {
   } catch {
     body = null;
   }
+  // 메시지가 봇까지 오는지 확인하는 용도. 시각·블록·경로만 남긴다 (발화·사용자 정보 없음)
+  console.log(JSON.stringify({ evt: "kakao_skill", at: toSeoulISO(new Date()), ...skillLogFields(body) }));
   return json(buildSkillResponse(base, blockNameOf(body)));
 }

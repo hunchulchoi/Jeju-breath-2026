@@ -43,6 +43,16 @@ export function blockNameOf(body: unknown): string {
   return typeof name === "string" ? name : "";
 }
 
+/**
+ * 운영 확인용 로그 항목. 블록 이름과 요청 경로(surface: 카카오톡 채널인지 오픈빌더 봇테스트인지)만 남긴다.
+ * 발화, 사용자 키, 기타 사용자 정보는 넣지 않는다.
+ */
+export function skillLogFields(body: unknown): { block: string; surface: string } {
+  const b = (body ?? {}) as { userRequest?: { params?: { surface?: unknown } } };
+  const surface = b.userRequest?.params?.surface;
+  return { block: blockNameOf(body).slice(0, 40), surface: typeof surface === "string" ? surface.slice(0, 40) : "" };
+}
+
 export function buildSkillResponse(baseUrl: string, blockName = ""): SkillResponse {
   const guide = blockName.includes("안내");
   const base = baseUrl.replace(/\/+$/, "");
