@@ -14,6 +14,7 @@ npm run dev                  # http://localhost:3000
 - 위치 권한은 HTTPS나 `localhost`에서만 동작합니다. 휴대폰으로 시험하려면 HTTPS 주소(배포 또는 터널)가 필요합니다.
 - `ANTHROPIC_API_KEY`가 없거나 API가 5초 안에 답하지 않으면 강도 버튼 질문으로 넘어갑니다 (PRD 6.3).
 - 데이터는 Postgres(`DATABASE_URL`), 사진은 MinIO(`S3_*`)에 저장합니다. 테이블은 서버가 처음 DB에 연결할 때 만듭니다.
+- stage Postgres는 TLS로만 접속합니다. `certs/stage-postgres.crt`(서버 인증서, 공개 정보)를 신뢰할 인증서로 지정합니다. 명령은 프로젝트 폴더에서 실행해야 이 경로를 찾습니다.
 - `DEMO_MODE=true`면 위치 확인 화면에 [테스트 좌표 사용] 토글이 보입니다. 운영에서는 `false`로 둡니다.
 
 ## 명령
