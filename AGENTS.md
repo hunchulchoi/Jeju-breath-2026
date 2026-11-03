@@ -73,5 +73,6 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   - 접속 정보는 `.env.local`에만 둔다.
   - Postgres는 TLS로만 접속한다. `jeju_breath` 계정은 TLS 없는 접속이 서버에서 거부된다. 신뢰할 인증서는 `certs/stage-postgres.crt`이고, `DATABASE_URL`에 `sslmode=verify-ca`로 지정한다.
   - MinIO는 HTTPS 주소 `https://<s3-host>`(Traefik, Let's Encrypt)로 접속한다. `http://<stage-host>:9000`은 암호화되지 않으므로 쓰지 않는다.
+  - 예외: stage 서버 안의 컨테이너는 도커 내부망 `http://minio:9000`을 쓴다. 같은 호스트 안이라 트래픽이 서버 밖으로 나가지 않고, HTTPS 주소는 Cloudflare를 돌아 들어온다.
   - Postgres와 MinIO는 다른 앱과 함께 쓰는 서버다. 서버 설정을 바꿀 때는 다른 앱의 접속에 영향이 없게 하고, 무엇을 바꿨는지 개발기록에 남긴다.
   - 시험 데이터를 넣었으면 끝난 뒤 지운다. 시연 데이터는 `is_demo = TRUE`로 넣는다.

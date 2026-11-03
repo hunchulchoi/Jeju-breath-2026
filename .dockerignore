@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.env*
+!.env.example
+*.tsbuildinfo
+coverage
+tests
+eval
+docs
+scripts
+Dockerfile
+.dockerignore
+compose*.yaml
+*.log
+.DS_Store

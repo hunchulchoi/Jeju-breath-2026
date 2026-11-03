@@ -22,7 +22,7 @@ npm run dev                  # http://localhost:3000
 
 | 명령 | 설명 |
 | --- | --- |
-| `npm test` | 규칙(격자·중복·허위·제주 범위)·마스킹·저장·사진·AI 실패 처리 테스트. DB는 메모리 Postgres(PGlite)라 접속 정보가 필요 없음 |
+| `npm test` | 규칙(격자·중복·허위·제주 범위)·마스킹·저장·사진·카카오 초안·AI 실패 처리 테스트. DB는 메모리 Postgres(PGlite)라 접속 정보가 필요 없음 |
 | `npm run eval` | 평가용 20문장 AI 강도 정확도 (기준 18개 이상, API 키 필요). `-- --split tune`으로 조정용 40문장 |
 | `npm run seed` | 시연 데이터 다시 넣기 (그 날짜 시연 데이터만 지우고 새로 넣음) |
 | `npm run build` | 운영 빌드 |
@@ -34,12 +34,26 @@ npm run dev                  # http://localhost:3000
 | `app/report` | 채팅 제보 → 위치 확인 → AI 처리 → 강도 확인 → 접수 |
 | `app/map` | 날짜별 지도·목록 (Leaflet + OpenStreetMap), 같은 200m 칸은 마커 하나로 묶음 |
 | `app/api/*` | PRD 8장 API + 지표용 `/api/events`, `/api/metrics` |
+| `app/api/kakao` | 카카오 오픈빌더 스킬 (`KAKAO_SKILL_SECRET` 필요). 문장을 초안으로 저장하고 위치 확인 링크로 회신 |
+| `lib/kakao.ts` | 스킬 요청 해석·초안 저장·1회용 소비·응답 형식 |
 | `lib/rules.ts` | 위치 검사, 격자, 중복·허위 판정 |
 | `lib/claude.ts` | Claude Haiku 5.5 추출 (도구 호출로 형식 고정), 실패 처리 |
 | `lib/db.ts` | Postgres 연결·스키마 |
 | `lib/reports.ts` | 저장·조회·요약·지표 |
 | `lib/photos.ts`, `lib/storage.ts` | 사진 재인코딩(EXIF 제거)·MinIO 저장 |
 | `eval/sentences.json` | 평가 문장 60개 (**초안**, 팀 문장으로 교체 필요) |
+
+## 배포 (stage)
+
+1. 저장소를 Forgejo에 올립니다.
+2. Portainer > Stacks > Add stack > Repository에서 Forgejo 저장소를 지정하고 Compose path를 `compose.deploy.yaml`로 둡니다. 서비스 이름은 `jeju-breath`입니다.
+3. Environment variables에 넣습니다. 필수: `DATABASE_URL`(도커 내부망 호스트 `postgres`, TLS 파라미터 포함), `S3_SECRET_ACCESS_KEY`, `ANTHROPIC_API_KEY`, `USER_HASH_SALT`, `KAKAO_SKILL_SECRET`. 선택: `S3_ENDPOINT`(기본 `http://minio:9000`), `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `DEMO_MODE`(기본 `true`).
+4. cloudflared 설정에 `breath.devfor.link`를 추가해 Traefik으로 연결합니다.
+5. 카카오 오픈빌더 스킬 URL은 `https://breath.devfor.link/api/kakao/skill`이고, 헤더 `X-Skill-Secret`에 `KAKAO_SKILL_SECRET` 값을 넣습니다.
+
+- 컨테이너는 Postgres·MinIO와 도커 내부망(`postgres`, `minio`)으로 접속합니다. Postgres는 TLS 필수라 `certs/stage-postgres.crt`가 이미지의 `/app/certs`에 들어갑니다.
+- 카카오 스킬은 5초 안에 답해야 하므로 sablier(자동 중지)를 쓰지 않고 항상 켜 둡니다.
+- 로컬 이미지 시험: `docker build -t jeju-breath:test .`
 
 ## 개인정보
 

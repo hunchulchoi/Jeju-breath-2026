@@ -1,0 +1,68 @@
+# 제주숨결봇 stage 배포 (Portainer Git 스택, breath.devfor.link)
+#
+# Portainer > Stacks > Add stack > Repository: Compose path = compose.deploy.yaml
+# Environment variables
+#   필수:
+#     DATABASE_URL           postgres://jeju_breath:<비밀번호>@postgres:5432/jeju_breath?sslmode=verify-ca&sslrootcert=certs/stage-postgres.crt&uselibpqcompat=true
+#     S3_SECRET_ACCESS_KEY   MinIO jeju_breath 계정 비밀키
+#     ANTHROPIC_API_KEY      Claude API 키
+#     USER_HASH_SALT         제보자 ID 해시용 긴 랜덤 문자열
+#     KAKAO_SKILL_SECRET     카카오 오픈빌더 스킬 헤더 X-Skill-Secret 값
+#   선택:
+#     S3_ENDPOINT            기본 http://minio:9000 (같은 호스트의 도커 내부망이라 서버 밖으로 나가지 않음)
+#     S3_BUCKET              기본 jeju-breath
+#     S3_ACCESS_KEY_ID       기본 jeju_breath
+#     DEMO_MODE              기본 true (해커톤 시연용. 운영에서는 false)
+#
+# 카카오 스킬은 5초 안에 답해야 하므로 sablier(컨테이너 자동 중지)를 쓰지 않는다.
+
+services:
+  jeju-breath:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # 전체 URL을 받는다 (비밀번호 특수문자는 퍼센트 인코딩). 예:
+      # postgres://jeju_breath:<비밀번호>@postgres:5432/jeju_breath?sslmode=verify-ca&sslrootcert=certs/stage-postgres.crt&uselibpqcompat=true
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL required}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_REGION: us-east-1
+      S3_BUCKET: ${S3_BUCKET:-jeju-breath}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-jeju_breath}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY required}
+      S3_FORCE_PATH_STYLE: "true"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
+      USER_HASH_SALT: ${USER_HASH_SALT:?USER_HASH_SALT required}
+      KAKAO_SKILL_SECRET: ${KAKAO_SKILL_SECRET:?KAKAO_SKILL_SECRET required}
+      PUBLIC_BASE_URL: https://breath.devfor.link
+      DEMO_MODE: ${DEMO_MODE:-true}
+    networks: [traefik, postgres, minio]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: traefik_default
+      traefik.http.routers.jeju-breath.rule: Host(`breath.devfor.link`)
+      traefik.http.routers.jeju-breath.entrypoints: web,websecure
+      traefik.http.routers.jeju-breath.tls: "true"
+      traefik.http.routers.jeju-breath.service: jeju-breath
+      traefik.http.routers.jeju-breath.middlewares: crowdsec-bouncer@file,global-ratelimit@file
+      traefik.http.services.jeju-breath.loadbalancer.server.port: "3000"
+    healthcheck:
+      # 홈(/)은 DB를 타지 않는 정적 페이지
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  traefik:
+    name: traefik_default
+    external: true
+  postgres:
+    name: postgres_default
+    external: true
+  minio:
+    name: minio_default
+    external: true
