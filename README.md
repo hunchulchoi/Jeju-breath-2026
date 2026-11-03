@@ -15,7 +15,7 @@ npm run dev                  # http://localhost:3000
 - `ANTHROPIC_API_KEY`가 없거나 API가 5초 안에 답하지 않으면 강도 버튼 질문으로 넘어갑니다 (PRD 6.3).
 - 데이터는 Postgres(`DATABASE_URL`), 사진은 MinIO(`S3_*`)에 저장합니다. 테이블은 서버가 처음 DB에 연결할 때 만듭니다.
 - stage Postgres는 TLS로만 접속합니다. `certs/stage-postgres.crt`(서버 인증서, 공개 정보)를 신뢰할 인증서로 지정합니다. 명령은 프로젝트 폴더에서 실행해야 이 경로를 찾습니다.
-- stage MinIO는 `https://<s3-host>`(HTTPS)로 접속합니다.
+- stage MinIO는 HTTPS 주소로 접속합니다. 서버 주소는 내부 위키 `인프라` 페이지에 있습니다.
 - `DEMO_MODE=true`면 위치 확인 화면에 [테스트 좌표 사용] 토글이 보입니다. 운영에서는 `false`로 둡니다.
 
 ## 명령
@@ -45,28 +45,18 @@ npm run dev                  # http://localhost:3000
 
 ## 배포 (stage)
 
-이미 배포돼 있습니다: https://breath.devfor.link (Portainer 스택 `jeju-breath`)
+서비스 주소: https://breath.devfor.link
 
 **새 버전 배포**: `main`을 Forgejo에 push한 뒤 태그를 push하면 서버가 자동으로 다시 빌드합니다.
 
 ```bash
 git push forgejo main
 git tag -a v0.2.0 -m "변경 요약"
-git push forgejo v0.2.0      # → Forgejo 웹훅 → Portainer가 main을 받아 리빌드
+git push forgejo v0.2.0      # 태그가 올라가면 stage가 main을 받아 다시 빌드
 git push origin main --tags  # GitHub
 ```
 
-처음 설치하는 방법:
-
-1. 저장소를 Forgejo에 올립니다.
-2. Portainer > Stacks > Add stack > Repository에서 Forgejo 저장소를 지정하고 Compose path를 `compose.deploy.yaml`로 둡니다. 서비스 이름은 `jeju-breath`입니다.
-3. Environment variables에 넣습니다. 필수: `DATABASE_URL`(도커 내부망 호스트 `postgres`, TLS 파라미터 포함), `S3_SECRET_ACCESS_KEY`, `ANTHROPIC_API_KEY`, `USER_HASH_SALT`, `KAKAO_SKILL_SECRET`. 선택: `S3_ENDPOINT`(기본 `http://minio:9000`), `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `DEMO_MODE`(기본 `true`).
-4. cloudflared 설정에 `breath.devfor.link`를 추가해 Traefik으로 연결합니다.
-5. 카카오 오픈빌더 스킬 URL은 `https://breath.devfor.link/api/kakao/skill`이고, 헤더 `X-Skill-Secret`에 `KAKAO_SKILL_SECRET` 값을 넣습니다.
-
-- 컨테이너는 Postgres·MinIO와 도커 내부망(`postgres`, `minio`)으로 접속합니다. Postgres는 TLS 필수라 `certs/stage-postgres.crt`가 이미지의 `/app/certs`에 들어갑니다.
-- 카카오 스킬은 5초 안에 답해야 하므로 sablier(자동 중지)를 쓰지 않고 항상 켜 둡니다.
-- 로컬 이미지 시험: `docker build -t jeju-breath:test .`
+서버 구성과 처음부터 설치하는 방법은 내부 위키 `인프라` 페이지에 있습니다.
 
 ## 개인정보
 
