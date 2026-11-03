@@ -10,6 +10,18 @@ export const ODOR_TYPES = [
 ] as const;
 export type OdorType = (typeof ODOR_TYPES)[number];
 
+/** 화면에 보여 주는 쉬운 이름 (DB 값은 그대로) */
+export const ODOR_DISPLAY: Record<OdorType, string> = {
+  양돈: "돼지 축사",
+  계사: "닭 축사",
+  우사: "소 축사",
+  퇴비: "퇴비·거름",
+  액비: "밭에 뿌린 물거름",
+  음식물: "음식물",
+  기타: "기타",
+  "알 수 없음": "잘 모르겠어요",
+};
+
 export function isOdorType(v: unknown): v is OdorType {
   return typeof v === "string" && (ODOR_TYPES as readonly string[]).includes(v);
 }

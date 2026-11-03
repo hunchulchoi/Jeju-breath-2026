@@ -8,7 +8,7 @@ import { TopBar } from "../components/TopBar";
 import ConsentStep from "./ConsentStep";
 import { distanceMeters, RULES } from "@/lib/rules";
 import { formatTime } from "@/lib/time";
-import { CONSENT_VERSION, INTENSITY_COLORS, INTENSITY_LABELS, INTENSITY_TEXT, type OdorType, type PublicReport, type Summary } from "@/lib/types";
+import { CONSENT_VERSION, INTENSITY_COLORS, INTENSITY_LABELS, INTENSITY_TEXT, type OdorType, type PublicReport, type Summary, ODOR_DISPLAY } from "@/lib/types";
 
 // 시연 모드 테스트 좌표 (애월읍)
 const DEMO_COORDS = { lat: 33.4262, lng: 126.3361, accuracy: 15 };
@@ -27,12 +27,12 @@ const CONSENT_KEY = "jbb_consent";
 
 // 화면에 보이는 이름과 서버에 보내는 값
 // 아이콘은 이모지 (그림 파일 없이 휴대폰에서 바로 보임). 화면 읽기 프로그램은 글자만 읽는다.
-const ODOR_CHOICES: { label: string; icon: string; value: OdorType }[] = [
-  { label: "돼지 축사", icon: "🐷", value: "양돈" },
-  { label: "퇴비·거름", icon: "🌾", value: "퇴비" },
-  { label: "액비", icon: "🚜", value: "액비" },
-  { label: "기타", icon: "💨", value: "기타" },
-  { label: "잘 모르겠어요", icon: "❓", value: "알 수 없음" },
+const ODOR_CHOICES: { icon: string; value: OdorType; hint?: string }[] = [
+  { icon: "🐷", value: "양돈" },
+  { icon: "🌾", value: "퇴비" },
+  { icon: "🚜", value: "액비", hint: "(액비)" },
+  { icon: "💨", value: "기타" },
+  { icon: "❓", value: "알 수 없음" },
 ];
 
 type Step = "init" | "consent" | "main" | "saving" | "done";
@@ -498,7 +498,8 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
                 <span className="choice-icon" aria-hidden="true">
                   {c.icon}
                 </span>
-                <span>{c.label}</span>
+                <span>{ODOR_DISPLAY[c.value]}</span>
+                {c.hint ? <span className="choice-hint">{c.hint}</span> : null}
               </button>
             ))}
           </div>
@@ -587,7 +588,7 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
                 {saved.intensity} · {INTENSITY_LABELS[saved.intensity].short}
               </dd>
               <dt>냄새 종류</dt>
-              <dd>{saved.odor_type}</dd>
+              <dd>{ODOR_DISPLAY[saved.odor_type]}</dd>
             </dl>
             <p style={{ marginBottom: 0 }}>
               오늘 주변(1km) 제보 <strong>{saved.today_nearby_count}건</strong>

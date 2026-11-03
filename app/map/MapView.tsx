@@ -5,7 +5,7 @@ import OdorMap, { Legend, colorOf, photoSrc } from "../components/OdorMap";
 import { AirSource, AirToggle, useAirStations, useShowAir } from "../components/AirToggle";
 import { TopBar } from "../components/TopBar";
 import { formatTime } from "@/lib/time";
-import { INTENSITY_LABELS, type PublicReport, type Summary, INTENSITY_TEXT } from "@/lib/types";
+import { INTENSITY_LABELS, type PublicReport, type Summary, INTENSITY_TEXT, ODOR_DISPLAY } from "@/lib/types";
 
 type Tab = "map" | "list";
 
@@ -138,7 +138,7 @@ function ReportList({ reports }: { reports: PublicReport[] | null }) {
               {formatTime(r.reported_at)} · 강도 {r.intensity} · {INTENSITY_LABELS[r.intensity].short}
             </strong>
             <div>
-              {r.odor_type}
+              {ODOR_DISPLAY[r.odor_type] ?? r.odor_type}
               {r.symptoms.length ? ` · ${r.symptoms.join(", ")}` : ""}
             </div>
             {r.photo_ids.length ? (

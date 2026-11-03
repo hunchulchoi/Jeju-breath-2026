@@ -593,6 +593,11 @@ h1[tabindex="-1"]:focus {
   cursor: pointer;
 }
 
+.choice-hint {
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--muted);
+}
 .choice-icon {
   font-size: 32px;
   line-height: 1;

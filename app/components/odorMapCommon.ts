@@ -12,6 +12,7 @@ import {
   REVIEW_COLOR,
   type AirStation,
   type PublicReport,
+  ODOR_DISPLAY,
 } from "@/lib/types";
 
 /** Leaflet·카카오 두 지도 구현이 함께 쓰는 순수 로직 (묶음·색·정렬·팝업 문구) */
@@ -57,7 +58,7 @@ function maxIntensity(group: PublicReport[]) {
 }
 
 function describe(r: PublicReport) {
-  const parts = [`${formatTime(r.reported_at)}`, `강도 ${r.intensity} · ${INTENSITY_LABELS[r.intensity].short}`, r.odor_type];
+  const parts = [`${formatTime(r.reported_at)}`, `강도 ${r.intensity} · ${INTENSITY_LABELS[r.intensity].short}`, ODOR_DISPLAY[r.odor_type] ?? r.odor_type];
   if (r.symptoms.length) parts.push(r.symptoms.join(", "));
   return parts.join(" · ");
 }
