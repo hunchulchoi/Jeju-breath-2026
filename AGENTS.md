@@ -45,7 +45,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - 커밋되는 최종 코드는 리뷰를 거친 상태여야 한다. 리뷰 뒤에 리뷰받지 않은 큰 변경을 끼워 넣지 않는다.
 - 커밋 메시지는 한국어. 첫 줄에 요약, 본문에 변경 요점.
 - 서브에이전트와 Codex는 커밋하지 않는다. 커밋은 감독만 한다.
-- 원격 저장소 push는 사용자가 요청할 때만 한다.
+- 원격 저장소 push는 사용자가 요청할 때만 한다. 원격은 두 곳이고, push할 때는 둘 다 올린다.
+  - `forgejo`: 배포용 (`ssh://git@<forgejo-host>:2222/choihunchul/jeju-breath.git`)
+  - `origin`: GitHub 공개 저장소. 비밀값과 개인정보가 커밋에 없는지 확인한 뒤 올린다.
+- **배포 = 태그**: `vMAJOR.MINOR.PATCH` 태그를 `forgejo`에 push하면 stage가 자동으로 다시 빌드된다 (Forgejo 웹훅 → Portainer 스택 웹훅). `main` push만으로는 배포되지 않는다.
+  - 순서: `main` push → `git tag -a vX.Y.Z -m "<요약>"` → `git push forgejo vX.Y.Z` → `git push origin main --tags`
+  - Portainer는 태그가 아니라 `main`의 최신 커밋을 빌드한다. 그래서 태그는 `main`의 최신 커밋에 붙인다.
+  - 배포 뒤 https://breath.devfor.link 응답을 확인하고 `docs/개발기록.md`에 태그를 적는다.
 - `.env.local`과 비밀값은 커밋하지 않는다.
 
 ## 코드 규칙

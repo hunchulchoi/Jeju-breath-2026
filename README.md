@@ -45,6 +45,19 @@ npm run dev                  # http://localhost:3000
 
 ## 배포 (stage)
 
+이미 배포돼 있습니다: https://breath.devfor.link (Portainer 스택 `jeju-breath`)
+
+**새 버전 배포**: `main`을 Forgejo에 push한 뒤 태그를 push하면 서버가 자동으로 다시 빌드합니다.
+
+```bash
+git push forgejo main
+git tag -a v0.2.0 -m "변경 요약"
+git push forgejo v0.2.0      # → Forgejo 웹훅 → Portainer가 main을 받아 리빌드
+git push origin main --tags  # GitHub
+```
+
+처음 설치하는 방법:
+
 1. 저장소를 Forgejo에 올립니다.
 2. Portainer > Stacks > Add stack > Repository에서 Forgejo 저장소를 지정하고 Compose path를 `compose.deploy.yaml`로 둡니다. 서비스 이름은 `jeju-breath`입니다.
 3. Environment variables에 넣습니다. 필수: `DATABASE_URL`(도커 내부망 호스트 `postgres`, TLS 파라미터 포함), `S3_SECRET_ACCESS_KEY`, `ANTHROPIC_API_KEY`, `USER_HASH_SALT`, `KAKAO_SKILL_SECRET`. 선택: `S3_ENDPOINT`(기본 `http://minio:9000`), `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `DEMO_MODE`(기본 `true`).
