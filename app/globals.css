@@ -611,6 +611,11 @@ h1[tabindex="-1"]:focus {
   font-size: 16px;
   line-height: 1.5;
   text-align: left;
+  /* 카카오 오버레이가 nowrap을 물려줘서 긴 줄이 잘린다. 줄바꿈을 다시 허용한다 */
+  box-sizing: border-box;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 .kakao-popup-wrap::after {
   content: "";
