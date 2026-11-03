@@ -26,12 +26,13 @@ const SAFETY_TEXT =
 const CONSENT_KEY = "jbb_consent";
 
 // 화면에 보이는 이름과 서버에 보내는 값
-const ODOR_CHOICES: { label: string; value: OdorType }[] = [
-  { label: "돼지 축사", value: "양돈" },
-  { label: "퇴비·거름", value: "퇴비" },
-  { label: "액비", value: "액비" },
-  { label: "기타", value: "기타" },
-  { label: "잘 모르겠어요", value: "알 수 없음" },
+// 아이콘은 이모지 (그림 파일 없이 휴대폰에서 바로 보임). 화면 읽기 프로그램은 글자만 읽는다.
+const ODOR_CHOICES: { label: string; icon: string; value: OdorType }[] = [
+  { label: "돼지 축사", icon: "🐷", value: "양돈" },
+  { label: "퇴비·거름", icon: "🌾", value: "퇴비" },
+  { label: "액비", icon: "🚜", value: "액비" },
+  { label: "기타", icon: "💨", value: "기타" },
+  { label: "잘 모르겠어요", icon: "❓", value: "알 수 없음" },
 ];
 
 type Step = "init" | "consent" | "main" | "saving" | "done";
@@ -494,7 +495,10 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
                 aria-pressed={odor === c.value}
                 onClick={() => setOdor(c.value)}
               >
-                {c.label}
+                <span className="choice-icon" aria-hidden="true">
+                  {c.icon}
+                </span>
+                <span>{c.label}</span>
               </button>
             ))}
           </div>

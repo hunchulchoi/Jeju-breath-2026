@@ -577,8 +577,13 @@ h1[tabindex="-1"]:focus {
   gap: 10px;
 }
 .choice-btn {
-  min-height: 56px;
-  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 84px;
+  padding: 10px 12px;
   border-radius: var(--radius);
   border: 2px solid var(--line);
   background: var(--surface);
@@ -586,6 +591,11 @@ h1[tabindex="-1"]:focus {
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+}
+
+.choice-icon {
+  font-size: 32px;
+  line-height: 1;
 }
 
 /* 대기질 측정소: 제보 마커(동그라미)와 구분되는 둥근 사각형 배지 */
