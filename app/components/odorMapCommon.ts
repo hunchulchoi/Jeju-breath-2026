@@ -8,6 +8,7 @@ import {
   AIR_UNKNOWN_LABEL,
   INTENSITY_COLORS,
   INTENSITY_LABELS,
+  INTENSITY_TEXT,
   REVIEW_COLOR,
   type AirStation,
   type PublicReport,
@@ -56,7 +57,7 @@ function maxIntensity(group: PublicReport[]) {
 }
 
 function describe(r: PublicReport) {
-  const parts = [`${formatTime(r.reported_at)}`, `강도 ${r.intensity} ${INTENSITY_LABELS[r.intensity].short}`, r.odor_type];
+  const parts = [`${formatTime(r.reported_at)}`, `강도 ${r.intensity} · ${INTENSITY_LABELS[r.intensity].short}`, r.odor_type];
   if (r.symptoms.length) parts.push(r.symptoms.join(", "));
   return parts.join(" · ");
 }
@@ -120,9 +121,9 @@ export function groupReports(reports: PublicReport[]): MarkerGroup[] {
 /** 제보 마커 HTML (.odor-marker) */
 export function markerHtml(g: MarkerGroup) {
   const { top, count, size } = g;
-  const strong = !top.needs_review && top.intensity >= 4;
+  const fg = top.needs_review ? "#1F2A2E" : INTENSITY_TEXT[top.intensity];
   return (
-    `<div class="odor-marker${strong ? " strong" : ""}" style="width:${size}px;height:${size}px;background:${colorOf(top)}">` +
+    `<div class="odor-marker" style="width:${size}px;height:${size}px;background:${colorOf(top)};color:${fg}">` +
     `${top.intensity}${count > 1 ? `<span class="odor-count">${count}</span>` : ""}</div>`
   );
 }
@@ -135,7 +136,7 @@ function meTooHtml(top: PublicReport, cfg: MeToo | undefined) {
   return (
     `<div class="me-too">` +
     `<button type="button" class="me-too-btn" data-me-too="${Number(top.id)}">저도 악취를 느꼈어요</button>` +
-    `<div class="me-too-help">내 위치에서 같은 세기(강도 ${n})로 제보돼요</div></div>`
+    `<div class="me-too-help">내 위치에서 같은 세기(${n} · ${INTENSITY_LABELS[n]?.short ?? ""})로 제보돼요</div></div>`
   );
 }
 

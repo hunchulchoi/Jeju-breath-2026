@@ -122,6 +122,35 @@ p {
   opacity: 0.5;
   cursor: default;
 }
+/* 강도 5 119 안내 */
+.emergency-box {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: #FEF2F2;
+  border: 2px solid #DC2626;
+  border-radius: var(--radius);
+}
+.emergency-text,
+.emergency-note {
+  margin: 0;
+  font-size: 18px;
+  color: #7F1D1D;
+}
+.emergency-text {
+  font-weight: 700;
+}
+.emergency-note {
+  font-size: 16px;
+}
+.btn.btn-emergency,
+.btn.btn-emergency:visited {
+  min-height: 56px;
+  background: #B91C1C;
+  border-color: #B91C1C;
+  color: #FFFFFF;
+  font-weight: 800;
+}
 .btn:focus-visible,
 .tab:focus-visible,
 .intensity-btn:focus-visible,
@@ -150,33 +179,53 @@ select:focus-visible {
 /* 강도 버튼 */
 .intensity-grid {
   display: grid;
-  gap: 10px;
+  gap: 14px;
 }
 .intensity-btn {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 60px;
-  padding: 10px 14px;
-  border-radius: var(--radius);
-  border: 2px solid var(--line);
-  background: var(--surface);
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 18px 8px 10px;
+  border-radius: 999px;
+  border: 0;
   font: inherit;
-  font-weight: 700;
-  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.35;
   cursor: pointer;
   text-align: left;
+}
+/* 고르지 않은 버튼도 글자 대비를 유지한다 (흐리게 하지 않음). 선택은 테두리와 ✓로만 표시 */
+.intensity-btn.selected {
+  box-shadow: 0 0 0 3px #fff, 0 0 0 6px #1f2a2e;
 }
 .intensity-num {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  border: 2px solid rgba(0, 0, 0, 0.25);
-  font-size: 19px;
+  background: rgba(255, 255, 255, 0.4);
+  font-size: 18px;
+  font-weight: 800;
   flex: none;
+}
+.intensity-text {
+  flex: 1;
+  min-width: 0;
+}
+.intensity-text strong {
+  font-weight: 800;
+}
+.intensity-text span {
+  font-weight: 400;
+}
+.intensity-check {
+  flex: none;
+  font-size: 24px;
+  font-weight: 800;
 }
 
 .notice {
@@ -327,9 +376,6 @@ select {
   font-size: 15px;
   color: #1f2a2e;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-.odor-marker.strong {
-  color: #fff;
 }
 
 .visually-hidden {
@@ -520,7 +566,6 @@ h1[tabindex="-1"]:focus {
   height: 40vh;
   min-height: 260px;
 }
-.intensity-btn.selected,
 .choice-btn.selected {
   border-color: var(--brand);
   background: var(--brand-soft);

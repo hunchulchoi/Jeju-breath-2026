@@ -5,7 +5,7 @@ import OdorMap, { Legend, colorOf, photoSrc } from "../components/OdorMap";
 import { AirSource, AirToggle, useAirStations, useShowAir } from "../components/AirToggle";
 import { TopBar } from "../components/TopBar";
 import { formatTime } from "@/lib/time";
-import { INTENSITY_LABELS, type PublicReport, type Summary } from "@/lib/types";
+import { INTENSITY_LABELS, type PublicReport, type Summary, INTENSITY_TEXT } from "@/lib/types";
 
 type Tab = "map" | "list";
 
@@ -129,13 +129,13 @@ function ReportList({ reports }: { reports: PublicReport[] | null }) {
         <li key={r.id}>
           <span
             className="dot"
-            style={{ background: colorOf(r), color: !r.needs_review && r.intensity >= 4 ? "#fff" : undefined }}
+            style={{ background: colorOf(r), color: r.needs_review ? undefined : INTENSITY_TEXT[r.intensity] }}
           >
             {r.intensity}
           </span>
           <div>
             <strong>
-              {formatTime(r.reported_at)} · 강도 {r.intensity} {INTENSITY_LABELS[r.intensity].short}
+              {formatTime(r.reported_at)} · 강도 {r.intensity} · {INTENSITY_LABELS[r.intensity].short}
             </strong>
             <div>
               {r.odor_type}

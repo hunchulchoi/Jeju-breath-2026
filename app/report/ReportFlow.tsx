@@ -8,7 +8,7 @@ import { TopBar } from "../components/TopBar";
 import ConsentStep from "./ConsentStep";
 import { distanceMeters, RULES } from "@/lib/rules";
 import { formatTime } from "@/lib/time";
-import { CONSENT_VERSION, INTENSITY_COLORS, INTENSITY_LABELS, type OdorType, type PublicReport, type Summary } from "@/lib/types";
+import { CONSENT_VERSION, INTENSITY_COLORS, INTENSITY_LABELS, INTENSITY_TEXT, type OdorType, type PublicReport, type Summary } from "@/lib/types";
 
 // 시연 모드 테스트 좌표 (애월읍)
 const DEMO_COORDS = { lat: 33.4262, lng: 126.3361, accuracy: 15 };
@@ -118,6 +118,19 @@ function saveConsent() {
   } catch {
     // 저장하지 못해도 이번 제보는 계속할 수 있다
   }
+}
+
+// 강도 5 안내: tel: 링크라 자동으로 걸리지 않고 사용자가 누를 때 전화 앱이 열린다
+function Emergency119({ text, note }: { text: string; note?: string }) {
+  return (
+    <div className="emergency-box">
+      <p className="emergency-text">{text}</p>
+      {note ? <p className="emergency-note">{note}</p> : null}
+      <a href="tel:119" className="btn btn-emergency">
+        119에 전화하기
+      </a>
+    </div>
+  );
 }
 
 export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: boolean; today: string; kakaoKey: string }) {
@@ -433,30 +446,40 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
             {summaryText}
           </p>
 
-          <h2 id="intensity-title">지금 냄새는 몇 단계인가요?</h2>
+          <h2 id="intensity-title">지금 냄새는 어느 정도인가요?</h2>
           <div className="intensity-grid" role="group" aria-labelledby="intensity-title">
             {[1, 2, 3, 4, 5].map((n) => (
               <button
                 key={n}
                 type="button"
                 className={`intensity-btn${intensity === n ? " selected" : ""}`}
+                style={{ background: INTENSITY_COLORS[n], color: INTENSITY_TEXT[n] }}
                 aria-pressed={intensity === n}
                 onClick={() => setIntensity(n)}
               >
-                <span
-                  className="intensity-num"
-                  style={{ background: INTENSITY_COLORS[n], color: n >= 4 ? "#fff" : undefined }}
-                >
+                <span className="intensity-num" aria-hidden="true">
                   {n}
                 </span>
-                <span>
-                  {INTENSITY_LABELS[n].short}
-                  <span className="muted small" style={{ display: "block", fontWeight: 400 }}>
-                    {INTENSITY_LABELS[n].full}
-                  </span>
+                <span className="intensity-text">
+                  <strong>{INTENSITY_LABELS[n].short}</strong>
+                  <span className="intensity-sep"> · </span>
+                  <span>{INTENSITY_LABELS[n].full}</span>
                 </span>
+                {intensity === n ? (
+                  <span className="intensity-check" aria-hidden="true">
+                    ✓
+                  </span>
+                ) : null}
               </button>
             ))}
+          </div>
+          <div aria-live="polite">
+            {intensity === 5 ? (
+              <Emergency119
+                text="숨쉬기 힘들거나 어지럽고 메스꺼우면 바로 119에 전화하세요."
+                note="제보는 전화와 따로 보낼 수 있어요."
+              />
+            ) : null}
           </div>
 
           <h2 id="odor-title">
@@ -569,6 +592,7 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
           {saved.merged ? <p className="notice">30분 안에 같은 곳에서 보낸 제보라 하나로 합쳐졌어요.</p> : null}
           {saved.photo === "saved" ? <p className="muted">사진도 함께 저장했어요.</p> : null}
           {saved.photo && saved.photo !== "saved" ? <p className="notice">{PHOTO_MESSAGES[saved.photo]}</p> : null}
+          {saved.intensity === 5 ? <Emergency119 text="숨쉬기 힘들거나 몸이 불편하면 바로 119에 전화하세요." /> : null}
           <p className="muted small">{SAFETY_TEXT}</p>
           <Link href="/map?from=report" className="btn">
             오늘 지도 보기

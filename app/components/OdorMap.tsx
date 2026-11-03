@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { INTENSITY_COLORS, REVIEW_COLOR } from "@/lib/types";
+import { INTENSITY_COLORS, INTENSITY_LABELS, INTENSITY_TEXT, REVIEW_COLOR } from "@/lib/types";
 import KakaoOdorMap from "./KakaoOdorMap";
 import LeafletOdorMap from "./LeafletOdorMap";
 import { kakaoFailed, markKakaoFailed } from "./kakaoSdk";
@@ -35,19 +35,15 @@ export default function OdorMap({
 }
 
 export function Legend({ withMe = false, withAir = false }: { withMe?: boolean; withAir?: boolean }) {
-  const items = [
-    { n: "1-2", color: INTENSITY_COLORS[1], text: "살짝·보통" },
-    { n: "3", color: INTENSITY_COLORS[3], text: "강함" },
-    { n: "4-5", color: INTENSITY_COLORS[4], text: "극심·참기 어려움", strong: true },
-  ];
+  const items = [1, 2, 3, 4, 5];
   return (
     <div className="legend" aria-label="범례">
-      {items.map((i) => (
-        <span key={i.n}>
-          <span className="dot" style={{ background: i.color, color: i.strong ? "#fff" : undefined, width: 34, borderRadius: 13 }}>
-            {i.n}
+      {items.map((n) => (
+        <span key={n}>
+          <span className="dot" style={{ background: INTENSITY_COLORS[n], color: INTENSITY_TEXT[n] }}>
+            {n}
           </span>
-          {i.text}
+          {INTENSITY_LABELS[n].short}
         </span>
       ))}
       <span>

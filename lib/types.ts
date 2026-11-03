@@ -16,19 +16,28 @@ export function isOdorType(v: unknown): v is OdorType {
 
 // PRD 3.2 강도 기준
 export const INTENSITY_LABELS: Record<number, { short: string; full: string }> = {
-  1: { short: "살짝", full: "감지 취기" },
-  2: { short: "보통", full: "보통 취기" },
-  3: { short: "강함", full: "강한 취기" },
-  4: { short: "극심", full: "극심한 취기" },
-  5: { short: "참기 어려움", full: "참기 어려운 취기" },
+  1: { short: "살짝 나요", full: "냄새가 나는 걸 겨우 알겠어요" },
+  2: { short: "냄새가 나요", full: "무슨 냄새인지 알겠어요" },
+  3: { short: "심해요", full: "냄새가 확 느껴져요" },
+  4: { short: "아주 심해요", full: "창문을 닫아야 할 정도예요" },
+  5: { short: "못 참겠어요", full: "숨쉬기 힘들 정도예요" },
 };
 
+// 지도 마커·범례·강도 버튼이 함께 쓰는 색. 글자색(INTENSITY_TEXT)과의 대비는 모두 4.5:1 이상
+// (1 흰/#15803D 5.02, 2 진한/#FACC15 9.60, 3 진한/#FDBA74 8.71, 4 흰/#C2410C 5.18, 5 흰/#DC2626 4.83)
 export const INTENSITY_COLORS: Record<number, string> = {
-  1: "#FDE68A",
-  2: "#FDE68A",
-  3: "#FB923C",
-  4: "#DC2626",
+  1: "#15803D",
+  2: "#FACC15",
+  3: "#FDBA74",
+  4: "#C2410C",
   5: "#DC2626",
+};
+export const INTENSITY_TEXT: Record<number, string> = {
+  1: "#FFFFFF",
+  2: "#1F2A2E",
+  3: "#1F2A2E",
+  4: "#FFFFFF",
+  5: "#FFFFFF",
 };
 export const REVIEW_COLOR = "#9CA3AF";
 
