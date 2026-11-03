@@ -18,10 +18,12 @@ export default function MapView({
   days,
   initialDay,
   fromReport,
+  kakaoKey,
 }: {
   days: string[];
   initialDay: string;
   fromReport: boolean;
+  kakaoKey: string;
 }) {
   const [day, setDay] = useState(initialDay);
   const [tab, setTab] = useState<Tab>("map");
@@ -101,7 +103,7 @@ export default function MapView({
 
       <div hidden={tab !== "map"}>
         <AirToggle show={showAir} onChange={setShowAir} failed={airFailed} />
-        <OdorMap reports={reports} active={tab === "map"} onTileFailed={onTileFailed} air={showAir ? air : undefined} />
+        <OdorMap kakaoKey={kakaoKey} reports={reports} active={tab === "map"} onTileFailed={onTileFailed} air={showAir ? air : undefined} />
         <Legend withAir={showAir} />
         {showAir ? <AirSource /> : null}
       </div>

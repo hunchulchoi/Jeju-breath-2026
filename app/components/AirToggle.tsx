@@ -69,6 +69,6 @@ export function AirToggle({
 
 export function AirSource() {
   return (
-    <p className="muted small">대기 정보: 제주특별자치도 보건환경연구원 (일부 측정소는 대략적인 위치예요)</p>
+    <p className="muted small">대기 정보: 제주특별자치도 보건환경연구원</p>
   );
 }

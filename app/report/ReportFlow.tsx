@@ -120,7 +120,7 @@ function saveConsent() {
   }
 }
 
-export default function ReportFlow({ demoMode, today }: { demoMode: boolean; today: string }) {
+export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: boolean; today: string; kakaoKey: string }) {
   const [step, setStep] = useState<Step>("init");
   const [reviewing, setReviewing] = useState(false);
   const [useDemoCoords, setUseDemoCoords] = useState(false);
@@ -420,6 +420,7 @@ export default function ReportFlow({ demoMode, today }: { demoMode: boolean; tod
 
           <AirToggle show={showAir} onChange={setShowAir} failed={airFailed} />
           <OdorMap
+            kakaoKey={kakaoKey}
             reports={reports}
             air={showAir ? air : undefined}
             me={coords}

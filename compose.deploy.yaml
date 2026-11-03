@@ -11,6 +11,7 @@
 #     S3_ENDPOINT            기본 http://minio:9000 (같은 호스트의 도커 내부망이라 서버 밖으로 나가지 않음)
 #     S3_BUCKET              기본 jeju-breath
 #     S3_ACCESS_KEY_ID       기본 jeju_breath
+#     KAKAO_JS_KEY           카카오맵 JavaScript 키 (도메인 제한 공개 키). 없으면 OpenStreetMap(Leaflet)으로 그림
 #     DEMO_MODE              기본 true (해커톤 시연용. 운영에서는 false)
 #
 # 카카오 스킬은 5초 안에 답해야 하므로 sablier(컨테이너 자동 중지)를 쓰지 않는다.
@@ -35,6 +36,7 @@ services:
       USER_HASH_SALT: ${USER_HASH_SALT:?USER_HASH_SALT required}
       KAKAO_SKILL_SECRET: ${KAKAO_SKILL_SECRET:?KAKAO_SKILL_SECRET required}
       PUBLIC_BASE_URL: https://breath.devfor.link
+      KAKAO_JS_KEY: ${KAKAO_JS_KEY:-}
       DEMO_MODE: ${DEMO_MODE:-true}
     networks: [traefik, postgres, minio]
     labels:

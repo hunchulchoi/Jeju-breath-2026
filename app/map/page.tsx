@@ -12,5 +12,5 @@ export default async function MapPage({
   const days = recentDays(new Date(), 7);
   const initialDay = params.date && isValidDay(params.date) ? params.date : days[0];
   if (!days.includes(initialDay)) days.push(initialDay);
-  return <MapView days={days} initialDay={initialDay} fromReport={params.from === "report"} />;
+  return <MapView days={days} initialDay={initialDay} fromReport={params.from === "report"} kakaoKey={process.env.KAKAO_JS_KEY ?? ""} />;
 }
