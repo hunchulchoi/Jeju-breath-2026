@@ -58,3 +58,27 @@ export interface Summary {
 
 /** 개인정보·위치정보 동의 문구 버전. 문구를 바꾸면 날짜를 올리고, 제보마다 이 값을 저장한다. */
 export const CONSENT_VERSION = "2026-11-03";
+
+/** 지도에 표시하는 대기질 측정소 (제주특별자치도 보건환경연구원). 위치는 읍·동 중심의 근사값 */
+export interface AirStation {
+  site: string;
+  name: string;
+  lat: number;
+  lng: number;
+  /** 위치가 근사값이면 true (주소를 정확히 찾지 못한 측정소) */
+  approx: boolean;
+  /** KST ISO, 예: 2026-11-03T21:00:00+09:00 */
+  measured_at: string;
+  /** 통합대기 등급 1 좋음 2 보통 3 나쁨 4 매우나쁨, 모르면 null */
+  cai: 1 | 2 | 3 | 4 | null;
+  rep_item: string | null;
+  pm10: number | null;
+  pm25: number | null;
+  o3: number | null;
+}
+
+export const AIR_CAI_LABELS: Record<number, string> = { 1: "좋음", 2: "보통", 3: "나쁨", 4: "매우나쁨" };
+export const AIR_UNKNOWN_LABEL = "정보 없음";
+// 흰 글자 대비 4.5:1 이상 (좋음 6.7, 보통 5.0, 나쁨 4.9, 매우나쁨 6.5, 없음 4.8)
+export const AIR_CAI_COLORS: Record<number, string> = { 1: "#1D4ED8", 2: "#15803D", 3: "#A16207", 4: "#B91C1C" };
+export const AIR_UNKNOWN_COLOR = "#6B7280";

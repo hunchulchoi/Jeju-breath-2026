@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import OdorMap, { Legend } from "../components/OdorMap";
+import { AirSource, AirToggle, useAirStations, useShowAir } from "../components/AirToggle";
 import { TopBar } from "../components/TopBar";
 import ConsentStep from "./ConsentStep";
 import { distanceMeters, RULES } from "@/lib/rules";
@@ -143,6 +144,8 @@ export default function ReportFlow({ demoMode, today }: { demoMode: boolean; tod
   const photoRef = useRef<Blob | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const startedSent = useRef(false);
+  const [showAir, setShowAir] = useShowAir();
+  const { air, failed: airFailed } = useAirStations(step === "main" || step === "saving" ? today : null, showAir);
 
   // 저장된 동의가 현재 문구 버전과 같으면 안내·동의를 건너뛴다
   useEffect(() => {
@@ -415,13 +418,16 @@ export default function ReportFlow({ demoMode, today }: { demoMode: boolean; tod
             </div>
           ) : null}
 
+          <AirToggle show={showAir} onChange={setShowAir} failed={airFailed} />
           <OdorMap
             reports={reports}
+            air={showAir ? air : undefined}
             me={coords}
             className="map report-map"
             meToo={{ origin: loc === "ok" ? coords : null, onPick: submitMeToo, disabled: step === "saving" }}
           />
-          <Legend withMe />
+          <Legend withMe withAir={showAir} />
+          {showAir ? <AirSource /> : null}
           <p className="summary" aria-live="polite">
             {summaryText}
           </p>

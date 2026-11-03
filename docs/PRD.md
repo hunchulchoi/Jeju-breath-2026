@@ -169,6 +169,18 @@ flowchart TD
 - 지도 타일 로딩 실패 시 목록 탭으로 자동 전환
 - **수용 기준:** 시드 데이터 20건이 실제 위도·경도 위치에 표시된다
 
+### FR-9 대기 정보 겹쳐 보기 (P1)
+
+- 출처: 제주특별자치도 보건환경연구원 OpenAPI '제주 대기환경 정보'(인증키 없음, XML). 서버(`/api/air`)가 하루치를 받아 측정소별 최신 시각 값만 내보내고, 10분 동안 캐시한다.
+- `/map`과 `/report` 지도에 측정소 12곳을 둥근 사각형 배지로 표시한다. 배지에는 통합대기 등급을 쓰고 색을 입힌다 (좋음·보통·나쁨·매우나쁨).
+  - 제보 마커보다 아래 층에 그린다.
+  - [대기 정보 보기]로 켜고 끈다 (기본 켜짐).
+- 팝업에는 측정 시각, 통합대기 등급, PM10, PM2.5, 오존, 출처를 보여 준다.
+- 대표 등급(`REP_CAI`)이 비면 측정된 모든 항목 등급 중 가장 나쁜 값을 쓴다 (통합대기지수 정의).
+- 측정소 좌표는 API에 없어서 보건환경연구원 측정소 주소를 지오코딩해 쓴다. 지번이라 정확히 찾지 못한 곳은 '대략 위치'로 표시한다.
+- 외부 API가 실패해도 지도와 제보는 정상 동작하고, "대기 정보를 불러오지 못했어요"만 표시한다.
+- 가이드에는 있지만 실제 응답에 없는 풍향·풍속·기온·습도는 표시하지 않는다. 바람 정보는 별도 출처(기상청)가 필요하다.
+
 ### FR-8 시드 데이터 (P0)
 
 - 가상 제보 20건: 같은 날 한 마을(애월읍 일대)에 아침(06\~09시)·저녁(19\~23시) 몰린 급증 상황 포함, 냄새 종류는 양돈 위주
@@ -238,6 +250,7 @@ CREATE TABLE location_failures (
 | --- | --- | --- |
 | POST | `/api/reports` | `{ user_id, lat, lng, accuracy, intensity, odor_type, consent_version }` → 검증·저장 → `{ id, merged, needs_review, today_nearby_count, reported_at, photo }`. `consent_version`이 현재 `CONSENT_VERSION`과 다르거나 없으면 400 "개인정보·위치정보 동의가 필요해요.". lat/lng 없거나 강도가 1\~5 정수가 아니면 400. `odor_type`이 목록 밖이면 '알 수 없음'. 위치 실패는 422. 그 밖의 필드(`text`, `symptoms` 등)는 무시하고 저장하지 않는다. 사진을 붙이면 multipart (`data`: 위 JSON 문자열, `photo`: 이미지) |
 | POST | `/api/events` | `{ name }` (`report_started`, `map_viewed`) → 날짜별 이벤트 수 +1 (식별자 없음) |
+| GET | `/api/air?date=YYYY-MM-DD` | 측정소별 최신 대기질 `{ date, stations[], source }`. 외부 API 실패 시 `stations: []`와 `error` |
 | GET | `/api/photos/{id}` | 공개 가능한 제보 사진 (확인 필요 제보는 404) |
 | POST | `/api/location-failures` | 본문 없음. 오늘 날짜 카운트 +1 |
 | GET | `/api/reports?date=YYYY-MM-DD` | 해당 날짜 제보 목록(격자 좌표만, `user_hash` 제외, `photo_ids` 포함) |

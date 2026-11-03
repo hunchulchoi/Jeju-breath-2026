@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import OdorMap, { Legend, colorOf, photoSrc } from "../components/OdorMap";
+import { AirSource, AirToggle, useAirStations, useShowAir } from "../components/AirToggle";
 import { TopBar } from "../components/TopBar";
 import { formatTime } from "@/lib/time";
 import { INTENSITY_LABELS, type PublicReport, type Summary } from "@/lib/types";
@@ -28,6 +29,8 @@ export default function MapView({
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [tileFailed, setTileFailed] = useState(false);
+  const [showAir, setShowAir] = useShowAir();
+  const { air, failed: airFailed } = useAirStations(day, showAir);
 
   // 접수 화면에서 넘어온 지도 열람만 지표로 센다
   useEffect(() => {
@@ -97,8 +100,10 @@ export default function MapView({
       {loadError ? <p className="notice">제보를 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.</p> : null}
 
       <div hidden={tab !== "map"}>
-        <OdorMap reports={reports} active={tab === "map"} onTileFailed={onTileFailed} />
-        <Legend />
+        <AirToggle show={showAir} onChange={setShowAir} failed={airFailed} />
+        <OdorMap reports={reports} active={tab === "map"} onTileFailed={onTileFailed} air={showAir ? air : undefined} />
+        <Legend withAir={showAir} />
+        {showAir ? <AirSource /> : null}
       </div>
 
       {tab === "list" ? <ReportList reports={reports} /> : null}
