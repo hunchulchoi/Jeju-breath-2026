@@ -61,6 +61,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   - 순서: `main` push → `git tag -a vX.Y.Z -m "<요약>"` → `git push forgejo vX.Y.Z` → `git push origin main --tags`
   - Portainer는 태그가 아니라 `main`의 최신 커밋을 빌드한다. 그래서 태그는 `main`의 최신 커밋에 붙인다.
   - 배포 뒤 https://breath.devfor.link 응답을 확인하고 위키 `개발기록`에 태그를 적는다.
+  - 파일을 지운 버전은 웹훅 배포가 서버에 남은 옛 파일 때문에 빌드에 실패할 수 있다. 배포 뒤 스택 상태와 배포된 커밋을 확인하고, 실패했으면 Portainer에서 스택을 다시 배포(redeploy)한다. 자세한 방법은 위키 `인프라`에 있다.
 - `.env.local`과 비밀값은 커밋하지 않는다.
 
 ## 코드 규칙
