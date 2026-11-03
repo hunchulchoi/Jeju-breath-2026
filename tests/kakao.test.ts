@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "./pg";
-import { buildSkillResponse, checkSkillSecret, SKILL_TITLE, SKILL_DESCRIPTION } from "@/lib/kakao";
+import { blockNameOf, buildSkillResponse, checkSkillSecret, GUIDE_DESCRIPTION, GUIDE_TITLE, SKILL_TITLE, SKILL_DESCRIPTION } from "@/lib/kakao";
 
 let db: Awaited<ReturnType<typeof testDb>>;
 beforeAll(async () => {
@@ -78,5 +78,20 @@ describe("POST /api/kakao/skill", () => {
   it("비밀 헤더가 틀리면 401", async () => {
     const { POST } = await mount();
     expect((await call(POST, {}, "wrong")).status).toBe(401);
+  });
+});
+
+describe("블록별 문구", () => {
+  const card = (r: ReturnType<typeof buildSkillResponse>) =>
+    (r as { template: { outputs: { textCard: { title: string; description: string; buttons: unknown[] } }[] } }).template.outputs[0].textCard;
+  it("이용 안내 블록이면 안내 문구, 그 밖에는 웰컴 문구. 버튼은 같다", () => {
+    const guide = card(buildSkillResponse("https://x", blockNameOf({ userRequest: { block: { name: "이용 안내" } } })));
+    expect(guide.title).toBe(GUIDE_TITLE);
+    expect(guide.buttons).toHaveLength(2);
+    expect([...guide.title].length + [...guide.description].length).toBeLessThanOrEqual(400);
+    expect(card(buildSkillResponse("https://x", blockNameOf({ userRequest: { block: { name: "악취 제보 시작" } } }))).title).toBe(SKILL_TITLE);
+    expect(card(buildSkillResponse("https://x", blockNameOf({ userRequest: { block: { name: "폴백 블록" } } }))).title).toBe(SKILL_TITLE);
+    expect(card(buildSkillResponse("https://x", blockNameOf(null))).description).toBe(SKILL_DESCRIPTION);
+    expect(GUIDE_DESCRIPTION).toContain("200m");
   });
 });
