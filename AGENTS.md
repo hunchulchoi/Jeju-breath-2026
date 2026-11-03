@@ -67,8 +67,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 - **Next.js 16**: 코드를 쓰기 전에 `node_modules/next/dist/docs/`를 확인한다. 서버 페이지에서 요청마다 값을 읽어야 하면 `await connection()`을 쓴다. `params`와 `searchParams`는 Promise다.
 - **개인정보**
-  - 로그에 원문, 좌표, user_id, 비밀값을 남기지 않는다.
-  - 공개 API에 `user_hash`와 원문을 내보내지 않는다.
+  - 로그에 좌표, user_id, 비밀값을 남기지 않는다.
+  - 공개 API에 `user_hash`를 내보내지 않는다.
   - 원좌표는 판정 직후 지운다.
   - 사진은 EXIF를 지우고 다시 인코딩한 뒤 저장한다.
 - **DB**
@@ -79,10 +79,6 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   - 저장은 `lib/storage.ts`를 거친다.
   - MinIO는 `jeju-breath` 버킷만 쓰고, 버킷은 비공개로 둔다.
   - 사진은 `/api/photos/{id}`로만 내보낸다.
-- **AI**
-  - 추출은 `lib/claude.ts`에서 `claude-haiku-5-5`로 하고, 도구 호출로 출력 형식을 고정한다.
-  - `temperature`는 보내지 않는다 (400 오류).
-  - 실패하면 강도 버튼 질문으로 넘어간다.
 - **화면 문구**: 고령 사용자 기준의 쉬운 존댓말("~해요")을 쓴다. 버튼은 56px 이상, 본문 글자는 18px로 한다.
 - **stage 서버**
   - 접속 정보는 `.env.local`에만 둔다.

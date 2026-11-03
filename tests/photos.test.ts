@@ -3,19 +3,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PHOTO_RULES, attachPhoto, getPublicPhoto, processPhoto } from "@/lib/photos";
 import { listReports, submitReport, type ReportInput } from "@/lib/reports";
 import { memoryStore, type PhotoStore } from "@/lib/storage";
+import { CONSENT_VERSION } from "@/lib/types";
 import { testDb } from "./pg";
 
 const base: ReportInput = {
   user_id: "11111111-2222-3333-4444-555555555555",
-  text: "축사 냄새가 심해요",
   lat: 33.4625,
   lng: 126.3305,
   accuracy: 20,
   intensity: 4,
-  intensity_src: "ai",
   odor_type: "양돈",
-  symptoms: [],
-  confidence: 0.8,
+  consent_version: CONSENT_VERSION,
 };
 const now = new Date("2026-11-03T19:00:00+09:00");
 

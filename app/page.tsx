@@ -5,9 +5,9 @@ export default function Home() {
   return (
     <main className="container">
       <TopBar />
-      <h1>악취가 나면 한 문장으로 알려주세요</h1>
+      <h1>악취가 나면 알려주세요</h1>
       <p className="muted">
-        위치와 시각, 냄새 강도가 함께 기록돼요. 제보는 날짜별 지도에 쌓여 어디서 자주 냄새가 나는지 보여 줘요.
+        위치와 냄새 세기만 고르면 돼요. 제보는 날짜별 지도에 쌓여 어디서 자주 냄새가 나는지 보여 줘요.
       </p>
       <div className="stack" style={{ marginTop: 24 }}>
         <Link href="/report" className="btn">

@@ -14,7 +14,7 @@ export async function testDb(): Promise<DB & { reset(): Promise<void> }> {
     close: () => pg.close(),
     async reset() {
       await pg.exec(
-        "TRUNCATE reports, report_photos, location_failures, event_counts, kakao_drafts RESTART IDENTITY CASCADE",
+        "TRUNCATE reports, report_photos, location_failures, event_counts RESTART IDENTITY CASCADE",
       );
     },
   };

@@ -32,17 +32,6 @@ export const INTENSITY_COLORS: Record<number, string> = {
 };
 export const REVIEW_COLOR = "#9CA3AF";
 
-export const CONFIDENCE_THRESHOLD = 0.7;
-
-export type IntensitySource = "ai" | "button";
-
-export interface Extraction {
-  intensity: number | null;
-  odor_type: OdorType;
-  symptoms: string[];
-  confidence: number;
-}
-
 /** 지도·목록에 공개하는 제보 (제보자 정보·원문 없음) */
 export interface PublicReport {
   id: number;
@@ -66,3 +55,6 @@ export interface Summary {
   location_failures: number;
   has_demo: boolean;
 }
+
+/** 개인정보·위치정보 동의 문구 버전. 문구를 바꾸면 날짜를 올리고, 제보마다 이 값을 저장한다. */
+export const CONSENT_VERSION = "2026-11-03";

@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import OdorMap, { Legend } from "../components/OdorMap";
 import { TopBar } from "../components/TopBar";
+import ConsentStep from "./ConsentStep";
+import { distanceMeters, RULES } from "@/lib/rules";
 import { formatTime } from "@/lib/time";
-import { INTENSITY_COLORS, INTENSITY_LABELS, type OdorType } from "@/lib/types";
+import { CONSENT_VERSION, INTENSITY_COLORS, INTENSITY_LABELS, type OdorType, type PublicReport, type Summary } from "@/lib/types";
 
-const MAX_LEN = 500;
-const EXAMPLES = ["축사 냄새 때문에 창문을 못 열겠어요", "냄새가 납니다", "돼지 냄새 때문에 숨 막혀요"];
 // 시연 모드 테스트 좌표 (애월읍)
 const DEMO_COORDS = { lat: 33.4262, lng: 126.3361, accuracy: 15 };
 // 휴대폰에서 먼저 줄여 보낸다 (시골 이동통신망에서도 빨리 올라가도록). 서버가 다시 처리한다.
@@ -21,17 +22,19 @@ const PHOTO_MESSAGES: Record<string, string> = {
 };
 const SAFETY_TEXT =
   "이 정보는 주민 제보 기준이며 원인이나 책임을 판단하지 않아요. 건강 이상이 있으면 119 또는 의료기관에 문의하세요.";
+const CONSENT_KEY = "jbb_consent";
 
-type Step = "input" | "location" | "processing" | "confirm" | "saving" | "done" | "error";
+// 화면에 보이는 이름과 서버에 보내는 값
+const ODOR_CHOICES: { label: string; value: OdorType }[] = [
+  { label: "돼지 축사", value: "양돈" },
+  { label: "퇴비·거름", value: "퇴비" },
+  { label: "액비", value: "액비" },
+  { label: "기타", value: "기타" },
+  { label: "잘 모르겠어요", value: "알 수 없음" },
+];
 
-interface Extracted {
-  intensity: number | null;
-  odor_type: OdorType;
-  symptoms: string[];
-  confidence: number;
-  needs_question: boolean;
-  ai: boolean;
-}
+type Step = "init" | "consent" | "main" | "saving" | "done";
+type Loc = "loading" | "ok" | "error";
 
 interface Coords {
   lat: number;
@@ -99,28 +102,37 @@ function getPosition(): Promise<Coords> {
   });
 }
 
-export default function ReportFlow({
-  demoMode,
-  draft = null,
-  draftExpired = false,
-}: {
-  demoMode: boolean;
-  draft?: { token: string; text: string } | null;
-  draftExpired?: boolean;
-}) {
-  // 카카오 초안이 있으면 문장은 채워진 채 위치 확인부터 시작한다
-  const [draftToken, setDraftToken] = useState<string | null>(draft?.token ?? null);
-  const [step, setStep] = useState<Step>(draft ? "location" : "input");
-  const [text, setText] = useState(draft?.text ?? "");
-  const [expiredNotice, setExpiredNotice] = useState(draftExpired);
-  const [inputError, setInputError] = useState("");
+
+function hasConsent(): boolean {
+  try {
+    return localStorage.getItem(CONSENT_KEY) === CONSENT_VERSION;
+  } catch {
+    return false;
+  }
+}
+
+function saveConsent() {
+  try {
+    localStorage.setItem(CONSENT_KEY, CONSENT_VERSION);
+  } catch {
+    // 저장하지 못해도 이번 제보는 계속할 수 있다
+  }
+}
+
+export default function ReportFlow({ demoMode, today }: { demoMode: boolean; today: string }) {
+  const [step, setStep] = useState<Step>("init");
+  const [reviewing, setReviewing] = useState(false);
   const [useDemoCoords, setUseDemoCoords] = useState(false);
   const [coords, setCoords] = useState<Coords | null>(null);
-  const [extracted, setExtracted] = useState<Extracted | null>(null);
-  const [saved, setSaved] = useState<Saved | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [loc, setLoc] = useState<Loc>("loading");
+  const [locTry, setLocTry] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [reports, setReports] = useState<PublicReport[] | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [intensity, setIntensity] = useState<number | null>(null);
+  const [odor, setOdor] = useState<OdorType>("알 수 없음");
+  const [saved, setSaved] = useState<Saved | null>(null);
+  const [submitError, setSubmitError] = useState("");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState("");
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -130,10 +142,24 @@ export default function ReportFlow({
   // save()가 await 뒤에도 항상 최신 사진을 읽도록 state와 같이 갱신한다
   const photoRef = useRef<Blob | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const startedSent = useRef(false);
+
+  // 저장된 동의가 현재 문구 버전과 같으면 안내·동의를 건너뛴다
+  useEffect(() => {
+    setStep(hasConsent() ? "main" : "consent");
+  }, []);
 
   // 단계가 바뀌면 화면 읽기 프로그램이 새 안내를 읽도록 제목으로 초점을 옮긴다
   useEffect(() => {
-    headingRef.current?.focus();
+    if (step !== "init") headingRef.current?.focus();
+  }, [step]);
+
+  // 제보 화면에 처음 들어올 때 한 번만 센다
+  useEffect(() => {
+    if (step === "main" && !startedSent.current) {
+      startedSent.current = true;
+      postEvent("report_started");
+    }
   }, [step]);
 
   // 미리보기 주소는 바뀌거나 화면을 떠날 때 해제한다
@@ -150,6 +176,46 @@ export default function ReportFlow({
       photoJob.current += 1;
     };
   }, []);
+
+  // 오늘 제보·요약 (지도와 요약 한 줄)
+  useEffect(() => {
+    if (step !== "main") return;
+    let cancelled = false;
+    Promise.all([
+      fetch(`/api/reports?date=${today}`).then((r) => (r.ok ? r.json() : Promise.reject())),
+      fetch(`/api/summary?date=${today}`).then((r) => (r.ok ? r.json() : Promise.reject())),
+    ])
+      .then(([list, sum]: [{ reports: PublicReport[] }, Summary]) => {
+        if (cancelled) return;
+        setReports(list.reports);
+        setSummary(sum);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [step, today]);
+
+  // 제보 화면에 들어오면 바로 위치를 확인한다 (테스트 좌표 토글·다시 시도로 다시 실행)
+  useEffect(() => {
+    if (step !== "main") return;
+    let cancelled = false;
+    setLoc("loading");
+    setCoords(null);
+    const p = useDemoCoords ? Promise.resolve(DEMO_COORDS) : getPosition();
+    p.then((position) => {
+      if (cancelled) return;
+      setCoords(position);
+      setLoc("ok");
+    }).catch(() => {
+      if (cancelled) return;
+      postLocationFailure();
+      setLoc("error");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, useDemoCoords, locTry]);
 
   async function pickPhoto(file: File | undefined) {
     setPhotoError("");
@@ -174,68 +240,35 @@ export default function ReportFlow({
     setPhotoError("");
   }
 
-  function send(value = text) {
-    if (photoBusy) return;
-    const trimmed = value.trim();
-    if (!trimmed) return setInputError("냄새를 한 문장으로 적어 주세요.");
-    if (trimmed.length > MAX_LEN) return setInputError(`${MAX_LEN}자 이내로 적어 주세요.`);
-    setText(trimmed);
-    setInputError("");
-    // 새로 적은 문장은 만료된 초안과 무관하므로 안내 플래그를 끈다. 남겨 두면 이후 실패 시 [다시 시도]가 restart()를 불러 입력이 지워진다.
-    setExpiredNotice(false);
-    postEvent("report_started");
-    setStep("location");
-  }
+  // 요약 한 줄: 내 위치가 있으면 주변 1km, 없으면 오늘 전체
+  const nearby = useMemo(() => {
+    if (!coords || !reports) return null;
+    const near = reports.filter(
+      (r) =>
+        !r.needs_review &&
+        distanceMeters({ lat: coords.lat, lng: coords.lng }, { lat: r.grid_lat, lng: r.grid_lng }) <= RULES.nearbyMeters,
+    );
+    return { total: near.length, high: near.filter((r) => r.intensity >= 4).length };
+  }, [coords, reports]);
+  const summaryText = nearby
+    ? `오늘 내 주변(1km) 제보 ${nearby.total}건 · 강도 4 이상 ${nearby.high}건`
+    : summary
+      ? `오늘 제보 ${summary.total}건 · 강도 4 이상 ${summary.high_intensity}건`
+      : "오늘 제보를 불러오는 중이에요";
 
-  async function requestLocation() {
-    setBusy(true);
-    let position: Coords;
-    try {
-      position = useDemoCoords ? DEMO_COORDS : await getPosition();
-    } catch {
-      postLocationFailure();
-      setErrorMessage("위치를 확인하지 못해 저장하지 않았어요.");
-      setStep("error");
-      setBusy(false);
-      return;
-    }
-    setBusy(false);
-    setCoords(position);
-    setStep("processing");
-    let result: Extracted;
-    try {
-      const res = await fetch("/api/reports/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) throw new Error();
-      result = await res.json();
-    } catch {
-      result = { intensity: null, odor_type: "알 수 없음", symptoms: [], confidence: 0, needs_question: true, ai: false };
-    }
-    setExtracted(result);
-    if (result.needs_question || result.intensity === null) {
-      setStep("confirm");
-    } else {
-      await save(position, result, result.intensity, "ai");
-    }
-  }
-
-  async function save(position: Coords, ex: Extracted, intensity: number, src: "ai" | "button") {
+  async function submit() {
+    if (!coords || intensity === null || photoBusy) return;
+    const position = coords;
     setStep("saving");
+    setSubmitError("");
     const data = JSON.stringify({
       user_id: getUserId(),
-      draft_token: draftToken ?? undefined,
-      text,
       lat: position.lat,
       lng: position.lng,
       accuracy: position.accuracy,
       intensity,
-      intensity_src: src,
-      odor_type: ex.odor_type,
-      symptoms: ex.symptoms,
-      confidence: src === "ai" ? ex.confidence : null,
+      odor_type: odor,
+      consent_version: CONSENT_VERSION,
     });
     const photo = photoRef.current;
     let init: RequestInit;
@@ -250,175 +283,78 @@ export default function ReportFlow({
     try {
       const res = await fetch("/api/reports", init);
       const body = await res.json().catch(() => ({}));
-      if (res.status === 422) {
-        // 서버가 위치를 거절함 (제주 밖·정확도 부족). 실패 횟수는 서버가 셌다.
-        setErrorMessage(body.error ?? "위치를 확인하지 못해 저장하지 않았어요.");
-        setStep("error");
+      if (!res.ok) {
+        // 422: 서버가 위치를 거절함 (제주 밖·정확도 부족). 실패 횟수는 서버가 셌다.
+        setSubmitError(
+          res.status === 422
+            ? (body.error ?? "위치를 확인하지 못해 저장하지 않았어요.")
+            : "저장 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.",
+        );
+        setStep("main");
         return;
       }
-      if (res.status === 410) {
-        // 초안이 만료됐거나 이미 쓰였다
-        setErrorMessage(body.error ?? "링크가 만료됐어요. 카카오톡에서 다시 보내 주세요.");
-        setDraftToken(null);
-        setExpiredNotice(true);
-        setStep("error");
-        return;
-      }
-      if (!res.ok) throw new Error(body.error);
-      setSaved({ ...body, intensity, odor_type: ex.odor_type, photo: body.photo ?? null });
+      setSaved({ ...body, intensity, odor_type: odor, photo: body.photo ?? null });
       setStep("done");
     } catch {
-      setErrorMessage("저장 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.");
-      setStep("error");
+      setSubmitError("저장 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.");
+      setStep("main");
     }
   }
 
-  function chooseIntensity(n: number) {
-    if (!coords || !extracted) return;
-    void save(coords, extracted, n, "button");
-  }
-
-  function retry() {
-    setShowHelp(false);
-    // 만료된 링크로는 다시 저장할 수 없으니 입력 단계로 돌려보낸다
-    if (expiredNotice) return restart();
-    setStep("location");
-  }
-
   function restart() {
-    setText("");
-    setCoords(null);
-    setExtracted(null);
+    // 다음 제보도 제보 화면에 들어온 것으로 한 번 더 센다
+    startedSent.current = false;
     setSaved(null);
-    removePhoto();
+    setIntensity(null);
+    setOdor("알 수 없음");
+    setSubmitError("");
     setShowHelp(false);
-    setDraftToken(null);
-    setExpiredNotice(false);
-    setStep("input");
+    setReports(null);
+    removePhoto();
+    setStep("main");
   }
+
+  const canSubmit = loc === "ok" && !!coords && intensity !== null && !photoBusy;
+  const showTestCoords = demoMode && useDemoCoords;
+  const hasDemoData = !!summary?.has_demo || !!reports?.some((r) => r.is_demo);
 
   return (
     <main className="container">
-      <TopBar badges={demoMode && useDemoCoords ? <span className="badge">시연 모드: 테스트 좌표</span> : null} />
+      <TopBar
+        badges={
+          showTestCoords || hasDemoData ? (
+            <>
+              {showTestCoords ? <span className="badge">시연 모드: 테스트 좌표</span> : null}
+              {hasDemoData ? <span className="badge">시연 모드: 가상 데이터</span> : null}
+            </>
+          ) : null
+        }
+      />
 
-      {/* 대화 기록 */}
-      <div className="chat" aria-live="polite">
-        <div className="bubble bot">지금 느끼는 냄새를 한 문장으로 보내 주세요</div>
-        {step !== "input" && text ? <div className="bubble user">{text}</div> : null}
-        {step !== "input" && photoUrl ? (
-          <div className="bubble user photo-bubble">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={photoUrl} alt="함께 보낸 사진" />
-          </div>
-        ) : null}
-        {extracted && extracted.ai && extracted.intensity !== null && !extracted.needs_question ? (
-          <div className="bubble bot result">{resultCard(extracted.intensity, extracted.odor_type, extracted.symptoms)}</div>
-        ) : null}
-        {step === "done" && saved && extracted?.needs_question ? (
-          <div className="bubble user">
-            {saved.intensity} {INTENSITY_LABELS[saved.intensity].short}
-          </div>
-        ) : null}
-      </div>
-
-      {step === "input" ? (
-        <section className="stack" aria-labelledby="step-title">
-          <h1 id="step-title" ref={headingRef} tabIndex={-1}>
-            지금 느끼는 냄새를 한 문장으로 보내 주세요
-          </h1>
-          {expiredNotice ? (
-            <p className="notice" role="status">
-              링크가 만료됐어요. 여기에 다시 적어 주시거나 카카오톡에서 다시 보내 주세요.
-            </p>
-          ) : null}
-          <form
-            className="stack"
-            onSubmit={(e) => {
-              e.preventDefault();
-              send();
-            }}
-          >
-            <label htmlFor="report-text" className="visually-hidden">
-              제보 문장
-            </label>
-            <textarea
-              id="report-text"
-              value={text}
-              maxLength={MAX_LEN + 50}
-              placeholder="예: 축사 냄새 때문에 창문을 못 열겠어요"
-              onChange={(e) => setText(e.target.value)}
-              aria-invalid={inputError ? true : undefined}
-              aria-describedby="text-counter text-error"
-            />
-            <div id="text-counter" className={`counter ${text.length > MAX_LEN ? "form-error" : "muted"}`}>
-              {text.length}/{MAX_LEN}자
-            </div>
-            {inputError ? (
-              <p id="text-error" className="form-error" role="alert">
-                {inputError}
-              </p>
-            ) : null}
-            <div className="chips" aria-label="예시 문장">
-              {EXAMPLES.map((ex) => (
-                <button key={ex} type="button" className="chip" disabled={photoBusy} onClick={() => send(ex)}>
-                  {ex}
-                </button>
-              ))}
-            </div>
-            <div className="photo-pick">
-              {photoUrl ? (
-                <div className="photo-preview">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photoUrl} alt="첨부한 사진 미리보기" />
-                  <button type="button" className="btn secondary" onClick={removePhoto}>
-                    사진 빼기
-                  </button>
-                </div>
-              ) : (
-                <label className="btn secondary photo-label">
-                  사진 추가 (선택)
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="visually-hidden"
-                    onChange={(e) => {
-                      void pickPhoto(e.target.files?.[0]);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-              )}
-              {photoBusy ? (
-                <p className="muted" role="status" aria-live="polite">
-                  사진을 준비하고 있어요. 잠시만 기다려 주세요.
-                </p>
-              ) : null}
-              {photoError ? (
-                <p className="form-error" role="alert">
-                  {photoError}
-                </p>
-              ) : null}
-              <p className="muted small">
-                사람 얼굴·차 번호판·집 안이 나오지 않게 찍어 주세요. 사진은 지도에 공개되고, 촬영 위치 같은 정보는 지운 뒤
-                저장해요.
-              </p>
-            </div>
-            <button className="btn" type="submit" disabled={photoBusy}>
-              {photoBusy ? "사진을 준비하고 있어요" : "보내기"}
-            </button>
-          </form>
-        </section>
+      {step === "consent" ? (
+        <ConsentStep
+          ref={headingRef}
+          reviewing={reviewing}
+          onAgree={() => {
+            saveConsent();
+            setReviewing(false);
+            setStep("main");
+          }}
+        />
       ) : null}
 
-      {step === "location" ? (
-        <section className="stack">
+      {step === "main" || step === "saving" ? (
+        <section className="stack" aria-busy={step === "saving"}>
           <h1 ref={headingRef} tabIndex={-1}>
-            정확한 지도를 위해 현재 위치가 필요해요
+            내 위치를 확인하고 냄새를 알려 주세요
           </h1>
-          <p className="muted">
-            버튼을 누른 뒤 화면에 위치 권한을 묻는 창이 뜨면 <strong>허용</strong>을 눌러 주세요. 지도에는 약 200m
-            단위의 대략적인 위치만 보여요.
+
+          <p className="loc-status" role="status" aria-live="polite">
+            {loc === "loading" ? "내 위치를 확인하고 있어요" : null}
+            {loc === "ok" ? "내 위치를 확인했어요. 지도의 파란 점이 내 위치예요." : null}
+            {loc === "error" ? "위치를 확인하지 못해 제보할 수 없어요." : null}
           </p>
+
           {demoMode ? (
             <label className="card" style={{ display: "flex", gap: 12, alignItems: "center" }}>
               <input
@@ -432,31 +368,59 @@ export default function ReportFlow({
               </span>
             </label>
           ) : null}
-          <button className="btn" onClick={requestLocation} disabled={busy}>
-            {busy ? "위치 확인 중이에요" : "위치 허용"}
-          </button>
-        </section>
-      ) : null}
 
-      {step === "processing" || step === "saving" ? (
-        <section className="stack" aria-busy="true">
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <div className="spinner" aria-hidden="true" />
-            <h1 ref={headingRef} tabIndex={-1} style={{ margin: 0 }}>
-              {step === "processing" ? "AI가 냄새 강도와 종류를 정리하고 있어요" : "제보를 저장하고 있어요"}
-            </h1>
-          </div>
-        </section>
-      ) : null}
+          {loc === "error" ? (
+            <div className="stack">
+              <p>밖으로 나가 휴대폰의 위치 권한을 켠 뒤 다시 눌러 주세요.</p>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => {
+                  setSubmitError("");
+                  setLocTry((n) => n + 1);
+                }}
+              >
+                다시 시도
+              </button>
+              <button className="btn secondary" type="button" onClick={() => setShowHelp((v) => !v)} aria-expanded={showHelp}>
+                가족·이장에게 부탁하는 방법
+              </button>
+              {showHelp ? (
+                <div className="card">
+                  <p>
+                    <strong>위치 권한 켜기</strong>
+                  </p>
+                  <ol style={{ margin: "0 0 12px", paddingLeft: 22 }}>
+                    <li>휴대폰 설정에서 위치(GPS)를 켜 주세요.</li>
+                    <li>카카오톡이나 인터넷 앱의 위치 권한을 &lsquo;허용&rsquo;으로 바꿔 주세요.</li>
+                    <li>건물 밖으로 나가 [다시 시도]를 눌러 주세요.</li>
+                  </ol>
+                  <p style={{ marginBottom: 0 }}>
+                    어렵다면 냄새가 나는 그 자리에서 가족이나 이장님이 대신 보내 주셔도 돼요. 위치는 보내는 사람의 휴대폰
+                    위치로 기록돼요.
+                  </p>
+                </div>
+              ) : null}
+              <p className="muted small">위치가 없는 제보는 저장하지 않아요. 위치 실패 횟수만 이름 없이 집계해요.</p>
+            </div>
+          ) : null}
 
-      {step === "confirm" ? (
-        <section className="stack">
-          <h1 ref={headingRef} tabIndex={-1}>
-            지금 냄새는 몇 단계인가요?
-          </h1>
-          <div className="intensity-grid" role="group" aria-label="냄새 강도 선택">
+          <OdorMap reports={reports} me={coords} className="map report-map" />
+          <Legend withMe />
+          <p className="summary" aria-live="polite">
+            {summaryText}
+          </p>
+
+          <h2 id="intensity-title">지금 냄새는 몇 단계인가요?</h2>
+          <div className="intensity-grid" role="group" aria-labelledby="intensity-title">
             {[1, 2, 3, 4, 5].map((n) => (
-              <button key={n} className="intensity-btn" onClick={() => chooseIntensity(n)}>
+              <button
+                key={n}
+                type="button"
+                className={`intensity-btn${intensity === n ? " selected" : ""}`}
+                aria-pressed={intensity === n}
+                onClick={() => setIntensity(n)}
+              >
                 <span
                   className="intensity-num"
                   style={{ background: INTENSITY_COLORS[n], color: n >= 4 ? "#fff" : undefined }}
@@ -472,6 +436,91 @@ export default function ReportFlow({
               </button>
             ))}
           </div>
+
+          <h2 id="odor-title">
+            냄새 종류 <span className="muted small">(선택 사항)</span>
+          </h2>
+          <div className="odor-grid" role="group" aria-labelledby="odor-title">
+            {ODOR_CHOICES.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                className={`choice-btn${odor === c.value ? " selected" : ""}`}
+                aria-pressed={odor === c.value}
+                onClick={() => setOdor(c.value)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="photo-pick">
+            {photoUrl ? (
+              <div className="photo-preview">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photoUrl} alt="첨부한 사진 미리보기" />
+                <button type="button" className="btn secondary" onClick={removePhoto}>
+                  사진 빼기
+                </button>
+              </div>
+            ) : (
+              <label className="btn secondary photo-label">
+                사진 추가 (선택)
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="visually-hidden"
+                  onChange={(e) => {
+                    void pickPhoto(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+            {photoBusy ? (
+              <p className="muted" role="status" aria-live="polite">
+                사진을 준비하고 있어요. 잠시만 기다려 주세요.
+              </p>
+            ) : null}
+            {photoError ? (
+              <p className="form-error" role="alert">
+                {photoError}
+              </p>
+            ) : null}
+            <p className="muted small">
+              사람 얼굴·차 번호판·집 안이 나오지 않게 찍어 주세요. 사진은 지도에 공개되고, 촬영 위치 같은 정보는 지운 뒤
+              저장해요.
+            </p>
+          </div>
+
+          {submitError ? (
+            <p className="notice" role="alert">
+              {submitError}
+            </p>
+          ) : null}
+          <button className="btn" type="button" disabled={!canSubmit || step === "saving"} onClick={submit}>
+            {step === "saving"
+              ? "제보를 저장하고 있어요"
+              : photoBusy
+                ? "사진을 준비하고 있어요"
+                : loc !== "ok"
+                  ? "위치를 확인하면 보낼 수 있어요"
+                  : intensity === null
+                    ? "냄새 단계를 먼저 골라 주세요"
+                    : "제보 보내기"}
+          </button>
+          <p className="muted small">
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => {
+                setReviewing(true);
+                setStep("consent");
+              }}
+            >
+              동의 내용 보기
+            </button>
+          </p>
         </section>
       ) : null}
 
@@ -502,49 +551,11 @@ export default function ReportFlow({
           <Link href="/map?from=report" className="btn">
             오늘 지도 보기
           </Link>
-          <button className="btn secondary" onClick={restart}>
+          <button className="btn secondary" type="button" onClick={restart}>
             처음으로
           </button>
         </section>
       ) : null}
-
-      {step === "error" ? (
-        <section className="stack">
-          <h1 ref={headingRef} tabIndex={-1}>
-            {errorMessage}
-          </h1>
-          <p>밖으로 나가 위치 권한을 켠 뒤 다시 눌러 주세요.</p>
-          <button className="btn" onClick={retry}>
-            다시 시도
-          </button>
-          <button className="btn secondary" onClick={() => setShowHelp((v) => !v)} aria-expanded={showHelp}>
-            가족·이장에게 부탁하는 방법
-          </button>
-          {showHelp ? (
-            <div className="card">
-              <p>
-                <strong>위치 권한 켜기</strong>
-              </p>
-              <ol style={{ margin: "0 0 12px", paddingLeft: 22 }}>
-                <li>휴대폰 설정에서 위치(GPS)를 켜 주세요.</li>
-                <li>카카오톡이나 인터넷 앱의 위치 권한을 &lsquo;허용&rsquo;으로 바꿔 주세요.</li>
-                <li>건물 밖으로 나가 [다시 시도]를 눌러 주세요.</li>
-              </ol>
-              <p style={{ marginBottom: 0 }}>
-                어렵다면 냄새가 나는 그 자리에서 가족이나 이장님이 대신 보내 주셔도 돼요. 위치는 보내는 사람의 휴대폰
-                위치로 기록돼요.
-              </p>
-            </div>
-          ) : null}
-          <p className="muted small">위치가 없는 제보는 저장하지 않아요. 위치 실패 횟수만 이름 없이 집계해요.</p>
-        </section>
-      ) : null}
     </main>
   );
-}
-
-function resultCard(intensity: number, odor: OdorType, symptoms: string[]) {
-  return `강도 ${intensity} · ${INTENSITY_LABELS[intensity].short} / 냄새 종류: ${odor}${
-    symptoms.length ? ` / 증상: ${symptoms.join(", ")}` : ""
-  }`;
 }

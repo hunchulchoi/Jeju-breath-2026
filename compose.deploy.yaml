@@ -5,7 +5,6 @@
 #   필수:
 #     DATABASE_URL           postgres://jeju_breath:<비밀번호>@postgres:5432/jeju_breath?sslmode=verify-ca&sslrootcert=certs/stage-postgres.crt&uselibpqcompat=true
 #     S3_SECRET_ACCESS_KEY   MinIO jeju_breath 계정 비밀키
-#     ANTHROPIC_API_KEY      Claude API 키
 #     USER_HASH_SALT         제보자 ID 해시용 긴 랜덤 문자열
 #     KAKAO_SKILL_SECRET     카카오 오픈빌더 스킬 헤더 X-Skill-Secret 값
 #   선택:
@@ -33,7 +32,6 @@ services:
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-jeju_breath}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY required}
       S3_FORCE_PATH_STYLE: "true"
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY required}
       USER_HASH_SALT: ${USER_HASH_SALT:?USER_HASH_SALT required}
       KAKAO_SKILL_SECRET: ${KAKAO_SKILL_SECRET:?KAKAO_SKILL_SECRET required}
       PUBLIC_BASE_URL: https://breath.devfor.link

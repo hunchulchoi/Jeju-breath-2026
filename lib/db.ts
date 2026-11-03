@@ -15,7 +15,7 @@ export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS reports (
   id            SERIAL PRIMARY KEY,
   user_hash     TEXT NOT NULL,
-  text_masked   TEXT NOT NULL,
+  text_masked   TEXT,
   intensity     INTEGER NOT NULL CHECK (intensity BETWEEN 1 AND 5),
   intensity_src TEXT NOT NULL CHECK (intensity_src IN ('ai','button')),
   odor_type     TEXT NOT NULL,
@@ -28,8 +28,12 @@ CREATE TABLE IF NOT EXISTS reports (
   needs_review  BOOLEAN NOT NULL DEFAULT FALSE,
   merged_count  INTEGER NOT NULL DEFAULT 1,
   is_demo       BOOLEAN NOT NULL DEFAULT FALSE,
-  reported_at   TIMESTAMPTZ NOT NULL
+  reported_at   TIMESTAMPTZ NOT NULL,
+  consent_version TEXT
 );
+-- 자연어 제보를 없앤 뒤 새 제보는 text_masked가 NULL이다 (기존 행은 그대로 둔다)
+ALTER TABLE reports ALTER COLUMN text_masked DROP NOT NULL;
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS consent_version TEXT;
 CREATE INDEX IF NOT EXISTS idx_reports_date ON reports (reported_at);
 CREATE INDEX IF NOT EXISTS idx_reports_user ON reports (user_hash, reported_at);
 
@@ -57,15 +61,6 @@ CREATE TABLE IF NOT EXISTS event_counts (
   name  TEXT NOT NULL,
   count INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, name)
-);
-
--- 카카오 스킬이 받은 문장. 링크의 token으로만 열 수 있고 30분 안에 한 번만 쓴다.
-CREATE TABLE IF NOT EXISTS kakao_drafts (
-  token       TEXT PRIMARY KEY,
-  user_hash   TEXT NOT NULL,
-  text_masked TEXT NOT NULL,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  used_at     TIMESTAMPTZ
 );
 `;
 

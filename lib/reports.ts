@@ -1,7 +1,5 @@
 import type { DB, Queryable } from "./db";
-import { consumeDraft, isDraftToken } from "./kakao";
 import { hashUserId } from "./hash";
-import { maskPersonalInfo } from "./mask";
 import {
   RULES,
   checkLocation,
@@ -14,68 +12,40 @@ import {
 } from "./rules";
 import { dayRange, seoulDay, toSeoulISO } from "./time";
 import {
+  CONSENT_VERSION,
   isOdorType,
-  type IntensitySource,
   type OdorType,
   type PublicReport,
   type Summary,
 } from "./types";
 
-export const MAX_TEXT_LENGTH = 500;
-
-export function validateText(text: unknown): { ok: true; text: string } | { ok: false; error: string } {
-  if (typeof text !== "string" || text.trim() === "") {
-    return { ok: false, error: "냄새를 한 문장으로 적어 주세요." };
-  }
-  if (text.length > MAX_TEXT_LENGTH) {
-    return { ok: false, error: `${MAX_TEXT_LENGTH}자 이내로 적어 주세요.` };
-  }
-  return { ok: true, text: text.trim() };
-}
+export const CONSENT_REQUIRED = "개인정보·위치정보 동의가 필요해요.";
 
 export interface ReportInput {
-  /** 브라우저가 만든 ID. user_hash가 있으면 쓰지 않는다 */
-  user_id?: string;
-  /** 이미 해시된 제보자 값 (카카오 초안 경로) */
-  user_hash?: string;
-  /** 카카오 초안 token (파싱 결과일 뿐, 소비는 submitReport 옵션으로 한다) */
-  draft_token?: string;
-  text: string;
+  /** 브라우저가 만든 ID. 해시해서 user_hash로만 저장한다 */
+  user_id: string;
   lat: number;
   lng: number;
   accuracy?: number;
   intensity: number;
-  intensity_src: IntensitySource;
   odor_type: OdorType;
-  symptoms: string[];
-  confidence: number | null;
+  /** 동의 문구 버전. CONSENT_VERSION과 같아야 한다 */
+  consent_version: string;
 }
 
 export type ParseResult =
   | { ok: true; input: ReportInput }
   | { ok: false; status: 400; error: string };
 
-/** API 요청 본문을 검사한다. 위치 검사는 submitReport에서 따로 한다. */
+/** API 요청 본문을 검사한다. 위치 검사는 submitReport에서 따로 한다. text 등 모르는 필드는 무시한다. */
 export function parseReportBody(body: unknown): ParseResult {
   const bad = (error: string): ParseResult => ({ ok: false, status: 400, error });
   if (typeof body !== "object" || body === null) return bad("잘못된 요청이에요.");
   const b = body as Record<string, unknown>;
 
-  let draftToken: string | undefined;
-  let userId: string | undefined;
-  let textValue = "";
-  if (b.draft_token !== undefined) {
-    // 초안 경로: 제보자와 문장은 서버의 초안 값을 쓰므로 본문 값은 무시한다
-    if (!isDraftToken(b.draft_token)) return bad("잘못된 요청이에요.");
-    draftToken = b.draft_token;
-  } else {
-    if (typeof b.user_id !== "string" || b.user_id.length < 8 || b.user_id.length > 100) {
-      return bad("user_id가 필요해요.");
-    }
-    const text = validateText(b.text);
-    if (!text.ok) return bad(text.error);
-    userId = b.user_id;
-    textValue = text.text;
+  if (b.consent_version !== CONSENT_VERSION) return bad(CONSENT_REQUIRED);
+  if (typeof b.user_id !== "string" || b.user_id.length < 8 || b.user_id.length > 100) {
+    return bad("user_id가 필요해요.");
   }
   if (typeof b.lat !== "number" || typeof b.lng !== "number") {
     return bad("위치가 없어 저장하지 않았어요.");
@@ -84,27 +54,17 @@ export function parseReportBody(body: unknown): ParseResult {
   if (typeof intensity !== "number" || !Number.isInteger(intensity) || intensity < 1 || intensity > 5) {
     return bad("강도는 1-5 사이여야 해요.");
   }
-  if (b.intensity_src !== "ai" && b.intensity_src !== "button") return bad("intensity_src가 잘못됐어요.");
-  const symptoms = Array.isArray(b.symptoms)
-    ? b.symptoms.filter((s): s is string => typeof s === "string").map((s) => s.slice(0, 40)).slice(0, 5)
-    : [];
-  const confidence =
-    typeof b.confidence === "number" && b.confidence >= 0 && b.confidence <= 1 ? b.confidence : null;
 
   return {
     ok: true,
     input: {
-      user_id: userId,
-      draft_token: draftToken,
-      text: textValue,
+      user_id: b.user_id,
       lat: b.lat,
       lng: b.lng,
       accuracy: typeof b.accuracy === "number" ? b.accuracy : undefined,
       intensity,
-      intensity_src: b.intensity_src,
       odor_type: isOdorType(b.odor_type) ? b.odor_type : "알 수 없음",
-      symptoms,
-      confidence,
+      consent_version: CONSENT_VERSION,
     },
   };
 }
@@ -118,23 +78,10 @@ export type SubmitResult =
       today_nearby_count: number;
       reported_at: string;
     }
-  | { ok: false; problem: LocationProblem }
-  | { ok: false; problem: "draft_used" };
-
-class DraftUsedError extends Error {}
-
-export interface SubmitOptions {
-  /** 저장과 같은 트랜잭션에서 소비할 카카오 초안 token */
-  consumeDraftToken?: string;
-}
+  | { ok: false; problem: LocationProblem };
 
 /** 위치 검사 → 중복 → 허위 의심 판정 → 저장. 원좌표는 판정 직후 지운다. */
-export async function submitReport(
-  db: DB,
-  input: ReportInput,
-  now?: Date,
-  options: SubmitOptions = {},
-): Promise<SubmitResult> {
+export async function submitReport(db: DB, input: ReportInput, now?: Date): Promise<SubmitResult> {
   const loc = checkLocation(input);
   if (!loc.ok) {
     await recordLocationFailure(db, now ?? new Date());
@@ -142,23 +89,14 @@ export async function submitReport(
   }
   const point = loc.point;
   const grid = toGrid(point);
-  const userHash = input.user_hash ?? (input.user_id ? hashUserId(input.user_id) : null);
-  if (!userHash) throw new Error("user_id 또는 user_hash가 필요해요.");
-  const textMasked = maskPersonalInfo(input.text);
-  const symptomsJson = JSON.stringify(input.symptoms);
+  const userHash = hashUserId(input.user_id);
 
   let at = now ?? new Date();
-  let result: SubmitResult;
-  try {
-    result = await db.tx(async (q): Promise<SubmitResult> => {
+  const result = await db.tx(async (q): Promise<SubmitResult> => {
     // 같은 제보자의 동시 요청이 중복 판정을 함께 빠져나가지 않도록 제보자 단위로 잠근다
     await q.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [userHash]);
     // 시각은 잠금을 얻은 뒤에 정한다. 먼저 시작했지만 늦게 잠근 요청도 앞선 요청의 행을 본다.
     at = now ?? new Date();
-    // 초안은 저장과 같은 트랜잭션에서 소비한다. 동시에 쓰였으면 롤백한다.
-    if (options.consumeDraftToken && !(await consumeDraft(q, options.consumeDraftToken, at))) {
-      throw new DraftUsedError();
-    }
     const since = new Date(at.getTime() - 60 * 60_000);
     const { rows } = await q.query<{ id: number; grid_lat: number; grid_lng: number; reported_at: Date }>(
       `SELECT id, grid_lat, grid_lng, reported_at FROM reports
@@ -173,13 +111,12 @@ export async function submitReport(
 
     const dup = findDuplicate(point, at, priors);
     if (dup) {
-      // 나중 제보로 강도·종류·증상을 갱신하고 1건으로 묶는다
+      // 나중 제보로 강도·종류를 갱신하고 1건으로 묶는다
       const { rows: updated } = await q.query<{ needs_review: boolean; reported_at: Date }>(
-        `UPDATE reports SET intensity = $1, intensity_src = $2, odor_type = $3, symptoms = $4::jsonb,
-           confidence = $5, text_masked = $6, merged_count = merged_count + 1
-         WHERE id = $7
+        `UPDATE reports SET intensity = $1, odor_type = $2, consent_version = $3, merged_count = merged_count + 1
+         WHERE id = $4
          RETURNING needs_review, reported_at`,
-        [input.intensity, input.intensity_src, input.odor_type, symptomsJson, input.confidence, textMasked, dup.id],
+        [input.intensity, input.odor_type, input.consent_version, dup.id],
       );
       return {
         ok: true,
@@ -193,18 +130,15 @@ export async function submitReport(
 
     const needsReview = checkSuspicious(point, at, priors) !== null;
     const { rows: inserted } = await q.query<{ id: number }>(
-      `INSERT INTO reports (user_hash, text_masked, intensity, intensity_src, odor_type, symptoms,
-         confidence, grid_lat, grid_lng, raw_lat, raw_lng, needs_review, reported_at)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13)
+      `INSERT INTO reports (user_hash, intensity, intensity_src, odor_type, consent_version,
+         grid_lat, grid_lng, raw_lat, raw_lng, needs_review, reported_at)
+       VALUES ($1, $2, 'button', $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id`,
       [
         userHash,
-        textMasked,
         input.intensity,
-        input.intensity_src,
         input.odor_type,
-        symptomsJson,
-        input.confidence,
+        input.consent_version,
         grid.lat,
         grid.lng,
         point.lat,
@@ -225,11 +159,7 @@ export async function submitReport(
       today_nearby_count: await countNearbyToday(q, point, at, id),
       reported_at: toSeoulISO(at),
     };
-    });
-  } catch (e) {
-    if (e instanceof DraftUsedError) return { ok: false, problem: "draft_used" };
-    throw e;
-  }
+  });
 
   if (result.ok) {
     // 제보는 이미 저장됐으므로 지표 기록 실패가 저장 실패로 보이면 안 된다
