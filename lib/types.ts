@@ -55,6 +55,8 @@ export interface PublicReport {
   merged_count: number;
   is_demo: boolean;
   reported_at: string;
+  /** /api/photos/{id}로 볼 수 있는 사진. 확인 필요 제보는 항상 빈 배열 */
+  photo_ids: number[];
 }
 
 export interface Summary {

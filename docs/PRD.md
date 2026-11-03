@@ -222,34 +222,51 @@ flowchart TD
 | 숨을 못 쉬겠어요 | 5 | |
 | 냄새가 납니다 | null | |
 
-## 7. 데이터 모델 [권장: SQLite]
+## 7. 데이터 모델 [PostgreSQL]
 
 ```sql
 CREATE TABLE reports (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  id            SERIAL PRIMARY KEY,
   user_hash     TEXT NOT NULL,
   text_masked   TEXT NOT NULL,
   intensity     INTEGER NOT NULL CHECK (intensity BETWEEN 1 AND 5),
   intensity_src TEXT NOT NULL CHECK (intensity_src IN ('ai','button')),
   odor_type     TEXT NOT NULL,
-  symptoms      TEXT NOT NULL DEFAULT '[]',   -- JSON array
-  confidence    REAL,
-  grid_lat      REAL NOT NULL,
-  grid_lng      REAL NOT NULL,
-  raw_lat       REAL,                          -- 판정 직후 NULL 처리
-  raw_lng       REAL,
-  needs_review  INTEGER NOT NULL DEFAULT 0,
+  symptoms      JSONB NOT NULL DEFAULT '[]',
+  confidence    DOUBLE PRECISION,
+  grid_lat      DOUBLE PRECISION NOT NULL,
+  grid_lng      DOUBLE PRECISION NOT NULL,
+  raw_lat       DOUBLE PRECISION,              -- 판정 직후 NULL 처리
+  raw_lng       DOUBLE PRECISION,
+  needs_review  BOOLEAN NOT NULL DEFAULT FALSE,
   merged_count  INTEGER NOT NULL DEFAULT 1,
-  is_demo       INTEGER NOT NULL DEFAULT 0,
-  reported_at   TEXT NOT NULL                  -- ISO8601, Asia/Seoul
+  is_demo       BOOLEAN NOT NULL DEFAULT FALSE,
+  reported_at   TIMESTAMPTZ NOT NULL           -- 날짜 구분은 Asia/Seoul 기준
 );
 CREATE INDEX idx_reports_date ON reports (reported_at);
+
+-- 사진 파일은 MinIO(S3 호환) 비공개 버킷에, DB에는 객체 키만
+CREATE TABLE report_photos (
+  id          SERIAL PRIMARY KEY,
+  report_id   INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+  object_key  TEXT NOT NULL UNIQUE,            -- reports/YYYY-MM-DD/<uuid>.jpg
+  bytes       INTEGER NOT NULL,
+  uploaded    BOOLEAN NOT NULL DEFAULT FALSE,   -- 업로드 완료 후 TRUE, 그 전에는 공개하지 않음
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE location_failures (
   day   TEXT PRIMARY KEY,                      -- YYYY-MM-DD
   count INTEGER NOT NULL DEFAULT 0
 );
 ```
+
+사진 (선택, 제보당 최대 3장, 원본 10MB 이하):
+
+- 휴대폰에서 긴 변 1600px로 줄여 보내고, 서버가 긴 변 1280px JPEG로 다시 인코딩하며 EXIF(촬영 위치·기기 정보)를 모두 지운다.
+- 버킷은 비공개. 지도·목록은 `/api/photos/{id}`로만 보며, 확인 필요 제보의 사진은 내보내지 않는다.
+- 사진 저장이 실패해도 제보는 저장한다.
+- 촬영 안내: 사람 얼굴·차 번호판·집 안이 나오지 않게.
 
 보관 기간(운영 시): 원문 30일 후 삭제, 원좌표는 판정 직후 삭제, 시연 데이터는 해커톤 종료 1주 후 전체 삭제.
 
@@ -258,9 +275,10 @@ CREATE TABLE location_failures (
 | 메서드 | 경로 | 설명 |
 | --- | --- | --- |
 | POST | `/api/reports/extract` | `{ text }` → AI 추출 결과 `{ intensity, odor_type, symptoms, confidence, needs_question }` |
-| POST | `/api/reports` | `{ user_id, text, lat, lng, accuracy, intensity, intensity_src, odor_type, symptoms, confidence }` → 검증·저장 → `{ id, merged, needs_review, today_nearby_count }`. lat/lng 없으면 400 |
+| POST | `/api/reports` | `{ user_id, text, lat, lng, accuracy, intensity, intensity_src, odor_type, symptoms, confidence }` → 검증·저장 → `{ id, merged, needs_review, today_nearby_count, photo }`. lat/lng 없으면 400. 사진을 붙이면 multipart (`data`: 위 JSON 문자열, `photo`: 이미지) |
+| GET | `/api/photos/{id}` | 공개 가능한 제보 사진 (확인 필요 제보는 404) |
 | POST | `/api/location-failures` | 본문 없음. 오늘 날짜 카운트 +1 |
-| GET | `/api/reports?date=YYYY-MM-DD` | 해당 날짜 제보 목록(격자 좌표만, `user_hash` 제외) |
+| GET | `/api/reports?date=YYYY-MM-DD` | 해당 날짜 제보 목록(격자 좌표만, `user_hash` 제외, `photo_ids` 포함) |
 | GET | `/api/summary?date=YYYY-MM-DD` | `{ total, high_intensity, location_failures }` |
 | POST | `/api/kakao/skill` | (P1) 카카오 오픈빌더 스킬 엔드포인트, 9.2 참고 |
 
@@ -272,7 +290,8 @@ PoC의 `user_id`는 브라우저 localStorage에 만든 랜덤 UUID. 서버에�
 
 - 저장소·패키지명: `jeju-breath-bot`
 - Next.js(App Router) + TypeScript, 단일 저장소
-- DB: SQLite (better-sqlite3)
+- DB: PostgreSQL (`pg`), 테스트는 PGlite
+- 사진: MinIO (`@aws-sdk/client-s3`), 재인코딩·EXIF 제거는 `sharp`
 - 지도: Leaflet + OpenStreetMap 타일
 - AI: `@anthropic-ai/sdk`
 - 테스트: Vitest (규칙 판정 단위 테스트), 평가 스크립트

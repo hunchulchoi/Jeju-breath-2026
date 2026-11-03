@@ -1,9 +1,9 @@
 // 시연용 가상 제보 20건 (PRD FR-8). 실행: npm run seed [-- YYYY-MM-DD]
 // 같은 날 애월읍 한 마을에 아침(06~09시)·저녁(19~23시) 몰린 급증 상황. 다시 실행하면 그 날짜의 시연 데이터를 지우고 새로 넣는다.
-import { defaultDbPath, openDb } from "../lib/db";
+import { openDb } from "../lib/db";
 import { hashUserId } from "../lib/hash";
 import { toGrid } from "../lib/rules";
-import { isValidDay, nextDay, seoulDay } from "../lib/time";
+import { dayRange, isValidDay, seoulDay } from "../lib/time";
 import type { OdorType } from "../lib/types";
 
 // 애월읍 중산간 마을 (가상 기준점)
@@ -46,33 +46,27 @@ if (!isValidDay(day)) {
   process.exit(1);
 }
 
-const db = openDb(defaultDbPath());
-const insert = db.prepare(
-  `INSERT INTO reports (user_hash, text_masked, intensity, intensity_src, odor_type, symptoms, confidence,
-     grid_lat, grid_lng, needs_review, merged_count, is_demo, reported_at)
-   VALUES (?, ?, ?, 'ai', ?, ?, 0.8, ?, ?, 0, 1, 1, ?)`,
-);
-
-const tx = db.transaction(() => {
-  const removed = db
-    .prepare(`DELETE FROM reports WHERE is_demo = 1 AND reported_at >= ? AND reported_at < ?`)
-    .run(day, nextDay(day)).changes;
-  SEEDS.forEach(([time, base, dLat, dLng, intensity, odor, symptoms, text], i) => {
-    const origin = base === "v" ? VILLAGE : COAST;
-    const grid = toGrid({ lat: origin.lat + dLat, lng: origin.lng + dLng });
-    insert.run(
-      hashUserId(`demo-resident-${i}`),
-      text,
-      intensity,
-      odor,
-      JSON.stringify(symptoms),
-      grid.lat,
-      grid.lng,
-      `${day}T${time}:00+09:00`,
+const db = await openDb();
+try {
+  const removed = await db.tx(async (q) => {
+    const [from, to] = dayRange(day);
+    const { rows } = await q.query<{ id: number }>(
+      `DELETE FROM reports WHERE is_demo AND reported_at >= $1 AND reported_at < $2 RETURNING id`,
+      [from, to],
     );
+    for (const [i, [time, base, dLat, dLng, intensity, odor, symptoms, text]] of SEEDS.entries()) {
+      const origin = base === "v" ? VILLAGE : COAST;
+      const grid = toGrid({ lat: origin.lat + dLat, lng: origin.lng + dLng });
+      await q.query(
+        `INSERT INTO reports (user_hash, text_masked, intensity, intensity_src, odor_type, symptoms, confidence,
+           grid_lat, grid_lng, needs_review, merged_count, is_demo, reported_at)
+         VALUES ($1, $2, $3, 'ai', $4, $5::jsonb, 0.8, $6, $7, FALSE, 1, TRUE, $8)`,
+        [hashUserId(`demo-resident-${i}`), text, intensity, odor, JSON.stringify(symptoms), grid.lat, grid.lng, `${day}T${time}:00+09:00`],
+      );
+    }
+    return rows.length;
   });
-  return removed;
-});
-
-const removed = tx();
-console.log(`${day}: 시연 제보 ${SEEDS.length}건 입력 (이전 시연 데이터 ${removed}건 삭제) → ${defaultDbPath()}`);
+  console.log(`${day}: 시연 제보 ${SEEDS.length}건 입력 (이전 시연 데이터 ${removed}건 삭제)`);
+} finally {
+  await db.close();
+}

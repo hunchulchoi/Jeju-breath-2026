@@ -9,6 +9,6 @@ export async function POST(req: Request) {
   const body = (await readJson(req)) as { name?: unknown } | null;
   const name = CLIENT_EVENTS.find((e) => e === body?.name);
   if (!name) return error("알 수 없는 이벤트예요.");
-  bumpEvent(getDb(), name);
+  await bumpEvent(await getDb(), name);
   return json({ ok: true });
 }

@@ -97,7 +97,6 @@ export function findDuplicate(
   const candidates = priors
     .filter(
       (p) =>
-        p.reportedAt <= now &&
         minutesBetween(now, p.reportedAt) <= RULES.duplicateMinutes &&
         distanceMeters(point, p.point) <= RULES.duplicateMeters,
     )
@@ -113,7 +112,8 @@ export function checkSuspicious(
   now: Date,
   priors: PriorReport[],
 ): ReviewReason | null {
-  const past = priors.filter((p) => p.reportedAt <= now);
+  // 동시 요청 순서가 바뀌면 이전 제보 시각이 now보다 살짝 뒤일 수 있어 절댓값으로 본다
+  const past = priors;
   const jumped = past.some(
     (p) =>
       minutesBetween(now, p.reportedAt) <= RULES.jumpMinutes &&

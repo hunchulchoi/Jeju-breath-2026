@@ -150,7 +150,12 @@ export default function MapView({
       const label = `최고 강도 ${top.intensity}, 제보 ${count}건${top.needs_review ? " (확인 필요)" : ""}`;
       const lines = [...group]
         .sort((a, b) => a.reported_at.localeCompare(b.reported_at))
-        .map((r) => escapeHtml(describe(r)) + (r.merged_count > 1 ? ` (${r.merged_count}번 제보)` : ""));
+        .map(
+          (r) =>
+            escapeHtml(describe(r)) +
+            (r.merged_count > 1 ? ` (${r.merged_count}번 제보)` : "") +
+            popupPhotos(r),
+        );
       L.marker([top.grid_lat, top.grid_lng], { icon, title: label, alt: label, keyboard: true })
         .bindPopup(
           `<strong>이 근처 제보 ${count}건 · 최고 강도 ${top.intensity}</strong>` +
@@ -272,6 +277,16 @@ function ReportList({ reports }: { reports: PublicReport[] | null }) {
               {r.odor_type}
               {r.symptoms.length ? ` · ${r.symptoms.join(", ")}` : ""}
             </div>
+            {r.photo_ids.length ? (
+              <div className="thumbs">
+                {r.photo_ids.map((id) => (
+                  <a key={id} href={photoSrc(id)} target="_blank" rel="noopener">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photoSrc(id)} alt={`${formatTime(r.reported_at)} 제보 사진`} loading="lazy" />
+                  </a>
+                ))}
+              </div>
+            ) : null}
             {r.needs_review ? <div className="muted small">확인 필요 (요약에서 제외)</div> : null}
             {r.is_demo ? <div className="muted small">가상 데이터</div> : null}
           </div>
@@ -279,6 +294,20 @@ function ReportList({ reports }: { reports: PublicReport[] | null }) {
       ))}
     </ul>
   );
+}
+
+const photoSrc = (id: number) => `/api/photos/${id}`;
+
+/** 팝업 안 사진 (숫자 id만 넣으므로 그대로 HTML에 써도 안전) */
+function popupPhotos(r: PublicReport) {
+  if (!r.photo_ids.length) return "";
+  const imgs = r.photo_ids
+    .map(
+      (id) =>
+        `<a href="${photoSrc(id)}" target="_blank" rel="noopener"><img src="${photoSrc(id)}" alt="제보 사진" loading="lazy"></a>`,
+    )
+    .join("");
+  return `<div class="popup-photos">${imgs}</div>`;
 }
 
 function escapeHtml(s: string) {

@@ -1,4 +1,4 @@
-import type { DB } from "./db";
+import type { DB, Queryable } from "./db";
 import { hashUserId } from "./hash";
 import { maskPersonalInfo } from "./mask";
 import {
@@ -11,7 +11,7 @@ import {
   type LocationProblem,
   type PriorReport,
 } from "./rules";
-import { nextDay, seoulDay, toSeoulISO } from "./time";
+import { dayRange, seoulDay, toSeoulISO } from "./time";
 import {
   isOdorType,
   type IntensitySource,
@@ -102,71 +102,64 @@ export type SubmitResult =
     }
   | { ok: false; problem: LocationProblem };
 
-interface PriorRow {
-  id: number;
-  grid_lat: number;
-  grid_lng: number;
-  reported_at: string;
-}
-
 /** 위치 검사 → 중복 → 허위 의심 판정 → 저장. 원좌표는 판정 직후 지운다. */
-export function submitReport(db: DB, input: ReportInput, now = new Date()): SubmitResult {
+export async function submitReport(db: DB, input: ReportInput, now?: Date): Promise<SubmitResult> {
   const loc = checkLocation(input);
   if (!loc.ok) {
-    recordLocationFailure(db, now);
+    await recordLocationFailure(db, now ?? new Date());
     return { ok: false, problem: loc.problem };
   }
   const point = loc.point;
   const grid = toGrid(point);
   const userHash = hashUserId(input.user_id);
-  const nowIso = toSeoulISO(now);
   const textMasked = maskPersonalInfo(input.text);
   const symptomsJson = JSON.stringify(input.symptoms);
 
-  const run = db.transaction((): SubmitResult => {
-    const since = toSeoulISO(new Date(now.getTime() - 60 * 60_000));
-    const rows = db
-      .prepare(
-        `SELECT id, grid_lat, grid_lng, reported_at FROM reports
-         WHERE user_hash = ? AND reported_at >= ? AND reported_at <= ?`,
-      )
-      .all(userHash, since, nowIso) as PriorRow[];
+  let at = now ?? new Date();
+  const result = await db.tx(async (q): Promise<SubmitResult> => {
+    // 같은 제보자의 동시 요청이 중복 판정을 함께 빠져나가지 않도록 제보자 단위로 잠근다
+    await q.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [userHash]);
+    // 시각은 잠금을 얻은 뒤에 정한다. 먼저 시작했지만 늦게 잠근 요청도 앞선 요청의 행을 본다.
+    at = now ?? new Date();
+    const since = new Date(at.getTime() - 60 * 60_000);
+    const { rows } = await q.query<{ id: number; grid_lat: number; grid_lng: number; reported_at: Date }>(
+      `SELECT id, grid_lat, grid_lng, reported_at FROM reports
+       WHERE user_hash = $1 AND reported_at >= $2`,
+      [userHash, since],
+    );
     const priors: PriorReport[] = rows.map((r) => ({
       id: r.id,
       point: { lat: r.grid_lat, lng: r.grid_lng },
       reportedAt: new Date(r.reported_at),
     }));
 
-    const dup = findDuplicate(point, now, priors);
+    const dup = findDuplicate(point, at, priors);
     if (dup) {
       // 나중 제보로 강도·종류·증상을 갱신하고 1건으로 묶는다
-      db.prepare(
-        `UPDATE reports SET intensity = ?, intensity_src = ?, odor_type = ?, symptoms = ?,
-           confidence = ?, text_masked = ?, merged_count = merged_count + 1
-         WHERE id = ?`,
-      ).run(input.intensity, input.intensity_src, input.odor_type, symptomsJson, input.confidence, textMasked, dup.id);
-      const row = db.prepare(`SELECT needs_review, reported_at FROM reports WHERE id = ?`).get(dup.id) as {
-        needs_review: number;
-        reported_at: string;
-      };
+      const { rows: updated } = await q.query<{ needs_review: boolean; reported_at: Date }>(
+        `UPDATE reports SET intensity = $1, intensity_src = $2, odor_type = $3, symptoms = $4::jsonb,
+           confidence = $5, text_masked = $6, merged_count = merged_count + 1
+         WHERE id = $7
+         RETURNING needs_review, reported_at`,
+        [input.intensity, input.intensity_src, input.odor_type, symptomsJson, input.confidence, textMasked, dup.id],
+      );
       return {
         ok: true,
         id: dup.id,
         merged: true,
-        needs_review: row.needs_review === 1,
-        today_nearby_count: countNearbyToday(db, point, now, dup.id),
-        reported_at: row.reported_at,
+        needs_review: updated[0].needs_review,
+        today_nearby_count: await countNearbyToday(q, point, at, dup.id),
+        reported_at: toSeoulISO(new Date(updated[0].reported_at)),
       };
     }
 
-    const needsReview = checkSuspicious(point, now, priors) !== null;
-    const info = db
-      .prepare(
-        `INSERT INTO reports (user_hash, text_masked, intensity, intensity_src, odor_type, symptoms,
-           confidence, grid_lat, grid_lng, raw_lat, raw_lng, needs_review, reported_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+    const needsReview = checkSuspicious(point, at, priors) !== null;
+    const { rows: inserted } = await q.query<{ id: number }>(
+      `INSERT INTO reports (user_hash, text_masked, intensity, intensity_src, odor_type, symptoms,
+         confidence, grid_lat, grid_lng, raw_lat, raw_lng, needs_review, reported_at)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13)
+       RETURNING id`,
+      [
         userHash,
         textMasked,
         input.intensity,
@@ -178,122 +171,135 @@ export function submitReport(db: DB, input: ReportInput, now = new Date()): Subm
         grid.lng,
         point.lat,
         point.lng,
-        needsReview ? 1 : 0,
-        nowIso,
-      );
-    const id = Number(info.lastInsertRowid);
+        needsReview,
+        at,
+      ],
+    );
+    const id = inserted[0].id;
     // 판정이 끝났으므로 원좌표 삭제 (PRD 3.5)
-    db.prepare(`UPDATE reports SET raw_lat = NULL, raw_lng = NULL WHERE id = ?`).run(id);
+    await q.query(`UPDATE reports SET raw_lat = NULL, raw_lng = NULL WHERE id = $1`, [id]);
 
     return {
       ok: true,
       id,
       merged: false,
       needs_review: needsReview,
-      today_nearby_count: countNearbyToday(db, point, now, id),
-      reported_at: nowIso,
+      today_nearby_count: await countNearbyToday(q, point, at, id),
+      reported_at: toSeoulISO(at),
     };
   });
 
-  const result = run();
-  if (result.ok) bumpEvent(db, "report_saved", now);
+  if (result.ok) {
+    // 제보는 이미 저장됐으므로 지표 기록 실패가 저장 실패로 보이면 안 된다
+    try {
+      await bumpEvent(db, "report_saved", at);
+    } catch (e) {
+      console.error("[metrics] 이벤트 기록 실패", (e as Error).name);
+    }
+  }
   return result;
 }
 
 /** 오늘, 반경 1km 안의 다른 제보 수 (확인 필요 제외) */
-function countNearbyToday(db: DB, point: { lat: number; lng: number }, now: Date, excludeId: number): number {
-  const day = seoulDay(now);
-  const rows = db
-    .prepare(
-      `SELECT grid_lat, grid_lng FROM reports
-       WHERE reported_at >= ? AND reported_at < ? AND needs_review = 0 AND id != ?`,
-    )
-    .all(day, nextDay(day), excludeId) as { grid_lat: number; grid_lng: number }[];
+async function countNearbyToday(
+  q: Queryable,
+  point: { lat: number; lng: number },
+  now: Date,
+  excludeId: number,
+): Promise<number> {
+  const [from, to] = dayRange(seoulDay(now));
+  const { rows } = await q.query<{ grid_lat: number; grid_lng: number }>(
+    `SELECT grid_lat, grid_lng FROM reports
+     WHERE reported_at >= $1 AND reported_at < $2 AND needs_review = FALSE AND id != $3`,
+    [from, to, excludeId],
+  );
   return rows.filter((r) => distanceMeters(point, { lat: r.grid_lat, lng: r.grid_lng }) <= RULES.nearbyMeters)
     .length;
 }
 
-export function recordLocationFailure(db: DB, now = new Date()): void {
-  db.prepare(
-    `INSERT INTO location_failures (day, count) VALUES (?, 1)
-     ON CONFLICT(day) DO UPDATE SET count = count + 1`,
-  ).run(seoulDay(now));
+export async function recordLocationFailure(db: Queryable, now = new Date()): Promise<void> {
+  await db.query(
+    `INSERT INTO location_failures (day, count) VALUES ($1, 1)
+     ON CONFLICT (day) DO UPDATE SET count = location_failures.count + 1`,
+    [seoulDay(now)],
+  );
 }
 
 export const EVENT_NAMES = ["report_started", "report_saved", "map_viewed"] as const;
 export type EventName = (typeof EVENT_NAMES)[number];
 
-export function bumpEvent(db: DB, name: EventName, now = new Date()): void {
-  db.prepare(
-    `INSERT INTO event_counts (day, name, count) VALUES (?, ?, 1)
-     ON CONFLICT(day, name) DO UPDATE SET count = count + 1`,
-  ).run(seoulDay(now), name);
+export async function bumpEvent(db: Queryable, name: EventName, now = new Date()): Promise<void> {
+  await db.query(
+    `INSERT INTO event_counts (day, name, count) VALUES ($1, $2, 1)
+     ON CONFLICT (day, name) DO UPDATE SET count = event_counts.count + 1`,
+    [seoulDay(now), name],
+  );
 }
 
 interface ReportRow {
   id: number;
   intensity: number;
   odor_type: OdorType;
-  symptoms: string;
+  symptoms: unknown;
   grid_lat: number;
   grid_lng: number;
-  needs_review: number;
+  needs_review: boolean;
   merged_count: number;
-  is_demo: number;
-  reported_at: string;
+  is_demo: boolean;
+  reported_at: Date;
+  photo_ids: number[] | null;
 }
 
-/** 지도·목록용 제보. 격자 좌표만, 제보자 해시·원문 제외. */
-export function listReports(db: DB, day: string): PublicReport[] {
-  const rows = db
-    .prepare(
-      `SELECT id, intensity, odor_type, symptoms, grid_lat, grid_lng, needs_review, merged_count,
-              is_demo, reported_at
-       FROM reports WHERE reported_at >= ? AND reported_at < ? ORDER BY reported_at DESC`,
-    )
-    .all(day, nextDay(day)) as ReportRow[];
+/** 지도·목록용 제보. 격자 좌표만, 제보자 해시·원문 제외. 확인 필요 제보는 사진을 내보내지 않는다. */
+export async function listReports(db: Queryable, day: string): Promise<PublicReport[]> {
+  const [from, to] = dayRange(day);
+  const { rows } = await db.query<ReportRow>(
+    `SELECT r.id, r.intensity, r.odor_type, r.symptoms, r.grid_lat, r.grid_lng, r.needs_review,
+            r.merged_count, r.is_demo, r.reported_at,
+            CASE WHEN r.needs_review THEN NULL
+                 ELSE (SELECT array_agg(p.id ORDER BY p.id) FROM report_photos p WHERE p.report_id = r.id AND p.uploaded)
+            END AS photo_ids
+     FROM reports r
+     WHERE r.reported_at >= $1 AND r.reported_at < $2
+     ORDER BY r.reported_at DESC, r.id DESC`,
+    [from, to],
+  );
   return rows.map((r) => ({
     id: r.id,
     intensity: r.intensity,
     odor_type: r.odor_type,
-    symptoms: safeJsonArray(r.symptoms),
+    symptoms: stringArray(r.symptoms),
     grid_lat: r.grid_lat,
     grid_lng: r.grid_lng,
-    needs_review: r.needs_review === 1,
+    needs_review: r.needs_review,
     merged_count: r.merged_count,
-    is_demo: r.is_demo === 1,
-    reported_at: r.reported_at,
+    is_demo: r.is_demo,
+    reported_at: toSeoulISO(new Date(r.reported_at)),
+    photo_ids: r.photo_ids ?? [],
   }));
 }
 
-function safeJsonArray(s: string): string[] {
-  try {
-    const v = JSON.parse(s);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
+function stringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
 
-export function getSummary(db: DB, day: string): Summary {
-  const r = db
-    .prepare(
-      `SELECT
-         COALESCE(SUM(CASE WHEN needs_review = 0 THEN 1 ELSE 0 END), 0) AS total,
-         COALESCE(SUM(CASE WHEN needs_review = 0 AND intensity >= 4 THEN 1 ELSE 0 END), 0) AS high,
-         COALESCE(MAX(is_demo), 0) AS has_demo
-       FROM reports WHERE reported_at >= ? AND reported_at < ?`,
-    )
-    .get(day, nextDay(day)) as { total: number; high: number; has_demo: number };
-  const f = db.prepare(`SELECT count FROM location_failures WHERE day = ?`).get(day) as
-    | { count: number }
-    | undefined;
+export async function getSummary(db: Queryable, day: string): Promise<Summary> {
+  const [from, to] = dayRange(day);
+  const { rows } = await db.query<{ total: number; high: number; has_demo: boolean }>(
+    `SELECT
+       COUNT(*) FILTER (WHERE NOT needs_review)::int AS total,
+       COUNT(*) FILTER (WHERE NOT needs_review AND intensity >= 4)::int AS high,
+       COALESCE(BOOL_OR(is_demo), FALSE) AS has_demo
+     FROM reports WHERE reported_at >= $1 AND reported_at < $2`,
+    [from, to],
+  );
+  const { rows: f } = await db.query<{ count: number }>(`SELECT count FROM location_failures WHERE day = $1`, [day]);
   return {
     date: day,
-    total: r.total,
-    high_intensity: r.high,
-    location_failures: f?.count ?? 0,
-    has_demo: r.has_demo === 1,
+    total: rows[0].total,
+    high_intensity: rows[0].high,
+    location_failures: f[0]?.count ?? 0,
+    has_demo: rows[0].has_demo,
   };
 }
 
@@ -309,17 +315,16 @@ export interface Metrics {
 }
 
 /** PoC 지표 (PRD 12장). 시도가 0이면 비율은 null. */
-export function getMetrics(db: DB, day: string): Metrics {
-  const counts = Object.fromEntries(
-    (db.prepare(`SELECT name, count FROM event_counts WHERE day = ?`).all(day) as {
-      name: string;
-      count: number;
-    }[]).map((r) => [r.name, r.count]),
+export async function getMetrics(db: Queryable, day: string): Promise<Metrics> {
+  const { rows } = await db.query<{ name: string; count: number }>(
+    `SELECT name, count FROM event_counts WHERE day = $1`,
+    [day],
   );
+  const counts = Object.fromEntries(rows.map((r) => [r.name, r.count]));
   const started = counts.report_started ?? 0;
   const saved = counts.report_saved ?? 0;
   const mapViewed = counts.map_viewed ?? 0;
-  const failures = getSummary(db, day).location_failures;
+  const failures = (await getSummary(db, day)).location_failures;
   const ratio = (a: number, b: number) => (b > 0 ? Math.min(1, a / b) : null);
   return {
     date: day,

@@ -10,6 +10,15 @@ const MAX_LEN = 500;
 const EXAMPLES = ["축사 냄새 때문에 창문을 못 열겠어요", "냄새가 납니다", "돼지 냄새 때문에 숨 막혀요"];
 // 시연 모드 테스트 좌표 (애월읍)
 const DEMO_COORDS = { lat: 33.4262, lng: 126.3361, accuracy: 15 };
+// 휴대폰에서 먼저 줄여 보낸다 (시골 이동통신망에서도 빨리 올라가도록). 서버가 다시 처리한다.
+const PHOTO_MAX_SIDE = 1600;
+const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+const PHOTO_MESSAGES: Record<string, string> = {
+  invalid: "사진 파일을 읽지 못해 사진은 저장하지 않았어요.",
+  too_large: "사진이 너무 커서 저장하지 않았어요.",
+  limit: "이 제보에는 사진이 이미 3장 있어 더 붙이지 않았어요.",
+  failed: "사진을 올리지 못했어요. 제보는 접수됐어요.",
+};
 const SAFETY_TEXT =
   "이 정보는 주민 제보 기준이며 원인이나 책임을 판단하지 않아요. 건강 이상이 있으면 119 또는 의료기관에 문의하세요.";
 
@@ -38,6 +47,7 @@ interface Saved {
   reported_at: string;
   intensity: number;
   odor_type: OdorType;
+  photo: "saved" | "invalid" | "too_large" | "limit" | "failed" | null;
 }
 
 function getUserId(): string {
@@ -59,6 +69,23 @@ function postEvent(name: "report_started") {
 
 function postLocationFailure() {
   fetch("/api/location-failures", { method: "POST" }).catch(() => {});
+}
+
+/** 회전을 반영해 긴 변 1600px JPEG로 다시 그린다. 다시 그리면 촬영 정보(EXIF)도 빠진다. 실패하면 원본 */
+async function shrinkPhoto(file: File): Promise<Blob> {
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close();
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.85));
+    return blob ?? file;
+  } catch {
+    return file;
+  }
 }
 
 function getPosition(): Promise<Coords> {
@@ -83,6 +110,14 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
   const [errorMessage, setErrorMessage] = useState("");
   const [showHelp, setShowHelp] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState("");
+  const [photoBusy, setPhotoBusy] = useState(false);
+  // 사진 처리는 오래 걸려서, 늦게 끝난 이전 작업이 새 상태를 덮어쓰지 않게 작업 번호로 최신 것만 반영한다
+  const photoJob = useRef(0);
+  const mounted = useRef(false);
+  // save()가 await 뒤에도 항상 최신 사진을 읽도록 state와 같이 갱신한다
+  const photoRef = useRef<Blob | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   // 단계가 바뀌면 화면 읽기 프로그램이 새 안내를 읽도록 제목으로 초점을 옮긴다
@@ -90,7 +125,46 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
     headingRef.current?.focus();
   }, [step]);
 
+  // 미리보기 주소는 바뀌거나 화면을 떠날 때 해제한다
+  useEffect(() => {
+    return () => {
+      if (photoUrl) URL.revokeObjectURL(photoUrl);
+    };
+  }, [photoUrl]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      photoJob.current += 1;
+    };
+  }, []);
+
+  async function pickPhoto(file: File | undefined) {
+    setPhotoError("");
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return setPhotoError("사진 파일만 올릴 수 있어요.");
+    const job = ++photoJob.current;
+    setPhotoBusy(true);
+    const small = await shrinkPhoto(file);
+    // 그 사이 사진을 뺐거나, 처음으로 돌아갔거나, 새 사진을 골랐거나, 화면을 떠났으면 버린다
+    if (job !== photoJob.current || !mounted.current) return;
+    setPhotoBusy(false);
+    if (small.size > PHOTO_MAX_BYTES) return setPhotoError("사진이 너무 커요. 다른 사진을 골라 주세요.");
+    photoRef.current = small;
+    setPhotoUrl(URL.createObjectURL(small));
+  }
+
+  function removePhoto() {
+    photoJob.current += 1;
+    photoRef.current = null;
+    setPhotoBusy(false);
+    setPhotoUrl(null);
+    setPhotoError("");
+  }
+
   function send(value = text) {
+    if (photoBusy) return;
     const trimmed = value.trim();
     if (!trimmed) return setInputError("냄새를 한 문장으로 적어 주세요.");
     if (trimmed.length > MAX_LEN) return setInputError(`${MAX_LEN}자 이내로 적어 주세요.`);
@@ -137,23 +211,30 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
 
   async function save(position: Coords, ex: Extracted, intensity: number, src: "ai" | "button") {
     setStep("saving");
+    const data = JSON.stringify({
+      user_id: getUserId(),
+      text,
+      lat: position.lat,
+      lng: position.lng,
+      accuracy: position.accuracy,
+      intensity,
+      intensity_src: src,
+      odor_type: ex.odor_type,
+      symptoms: ex.symptoms,
+      confidence: src === "ai" ? ex.confidence : null,
+    });
+    const photo = photoRef.current;
+    let init: RequestInit;
+    if (photo) {
+      const form = new FormData();
+      form.append("data", data);
+      form.append("photo", photo, "photo.jpg");
+      init = { method: "POST", body: form };
+    } else {
+      init = { method: "POST", headers: { "Content-Type": "application/json" }, body: data };
+    }
     try {
-      const res = await fetch("/api/reports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: getUserId(),
-          text,
-          lat: position.lat,
-          lng: position.lng,
-          accuracy: position.accuracy,
-          intensity,
-          intensity_src: src,
-          odor_type: ex.odor_type,
-          symptoms: ex.symptoms,
-          confidence: src === "ai" ? ex.confidence : null,
-        }),
-      });
+      const res = await fetch("/api/reports", init);
       const body = await res.json().catch(() => ({}));
       if (res.status === 422) {
         // 서버가 위치를 거절함 (제주 밖·정확도 부족). 실패 횟수는 서버가 셌다.
@@ -162,7 +243,7 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
         return;
       }
       if (!res.ok) throw new Error(body.error);
-      setSaved({ ...body, intensity, odor_type: ex.odor_type });
+      setSaved({ ...body, intensity, odor_type: ex.odor_type, photo: body.photo ?? null });
       setStep("done");
     } catch {
       setErrorMessage("저장 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.");
@@ -185,6 +266,7 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
     setCoords(null);
     setExtracted(null);
     setSaved(null);
+    removePhoto();
     setShowHelp(false);
     setStep("input");
   }
@@ -197,6 +279,12 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
       <div className="chat" aria-live="polite">
         <div className="bubble bot">지금 느끼는 냄새를 한 문장으로 보내 주세요</div>
         {step !== "input" && text ? <div className="bubble user">{text}</div> : null}
+        {step !== "input" && photoUrl ? (
+          <div className="bubble user photo-bubble">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photoUrl} alt="함께 보낸 사진" />
+          </div>
+        ) : null}
         {extracted && extracted.ai && extracted.intensity !== null && !extracted.needs_question ? (
           <div className="bubble bot result">{resultCard(extracted.intensity, extracted.odor_type, extracted.symptoms)}</div>
         ) : null}
@@ -241,13 +329,51 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
             ) : null}
             <div className="chips" aria-label="예시 문장">
               {EXAMPLES.map((ex) => (
-                <button key={ex} type="button" className="chip" onClick={() => send(ex)}>
+                <button key={ex} type="button" className="chip" disabled={photoBusy} onClick={() => send(ex)}>
                   {ex}
                 </button>
               ))}
             </div>
-            <button className="btn" type="submit">
-              보내기
+            <div className="photo-pick">
+              {photoUrl ? (
+                <div className="photo-preview">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photoUrl} alt="첨부한 사진 미리보기" />
+                  <button type="button" className="btn secondary" onClick={removePhoto}>
+                    사진 빼기
+                  </button>
+                </div>
+              ) : (
+                <label className="btn secondary photo-label">
+                  사진 추가 (선택)
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="visually-hidden"
+                    onChange={(e) => {
+                      void pickPhoto(e.target.files?.[0]);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              )}
+              {photoBusy ? (
+                <p className="muted" role="status" aria-live="polite">
+                  사진을 준비하고 있어요. 잠시만 기다려 주세요.
+                </p>
+              ) : null}
+              {photoError ? (
+                <p className="form-error" role="alert">
+                  {photoError}
+                </p>
+              ) : null}
+              <p className="muted small">
+                사람 얼굴·차 번호판·집 안이 나오지 않게 찍어 주세요. 사진은 지도에 공개되고, 촬영 위치 같은 정보는 지운 뒤
+                저장해요.
+              </p>
+            </div>
+            <button className="btn" type="submit" disabled={photoBusy}>
+              {photoBusy ? "사진을 준비하고 있어요" : "보내기"}
             </button>
           </form>
         </section>
@@ -339,6 +465,8 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
             </p>
           </div>
           {saved.merged ? <p className="notice">30분 안에 같은 곳에서 보낸 제보라 하나로 합쳐졌어요.</p> : null}
+          {saved.photo === "saved" ? <p className="muted">사진도 함께 저장했어요.</p> : null}
+          {saved.photo && saved.photo !== "saved" ? <p className="notice">{PHOTO_MESSAGES[saved.photo]}</p> : null}
           <p className="muted small">{SAFETY_TEXT}</p>
           <Link href="/map?from=report" className="btn">
             오늘 지도 보기

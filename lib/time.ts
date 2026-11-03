@@ -1,4 +1,4 @@
-// 모든 시각은 Asia/Seoul(UTC+9, 서머타임 없음) 기준 ISO 문자열로 저장한다.
+// 시각은 DB에 timestamptz로 저장하고, 화면·API에는 Asia/Seoul(UTC+9, 서머타임 없음) ISO 문자열로 내보낸다.
 const OFFSET_MS = 9 * 60 * 60 * 1000;
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -27,6 +27,11 @@ export function nextDay(day: string): string {
   const d = new Date(`${day}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
+}
+
+/** 서울 날짜 하루의 [시작, 다음날 시작) — timestamptz 범위 조회용 */
+export function dayRange(day: string): [string, string] {
+  return [`${day}T00:00:00+09:00`, `${nextDay(day)}T00:00:00+09:00`];
 }
 
 /** 오늘 포함 최근 n일 (최신순) */
