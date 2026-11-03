@@ -14,6 +14,18 @@ export type SkillResponse = Record<string, unknown>;
  * 스킬 응답 (형식 2.0). 발화 내용과 상관없이 같은 카드를 보낸다.
  * 제보는 웹에서 위치와 냄새 세기를 골라 접수하므로 문장은 받지 않는다.
  */
+/** 웰컴·폴백 블록이 함께 쓰는 안내 문구. textCard는 제목+설명 합계 400자 안쪽으로 둔다. */
+export const SKILL_TITLE = "냄새 때문에 불편하셨나요?";
+export const SKILL_DESCRIPTION = [
+  "지금 있는 곳의 냄새를 버튼 몇 번으로 지도에 남길 수 있어요.",
+  "",
+  "1. 아래 [제보하러 가기]를 눌러요",
+  "2. 위치 확인을 허용해요",
+  "3. 냄새 세기(1~5)를 고르면 끝이에요",
+  "",
+  "모인 제보는 날짜별 지도에서 누구나 볼 수 있어요. 냄새의 원인이나 책임을 판단하지는 않아요.",
+].join("\n");
+
 export function buildSkillResponse(baseUrl: string): SkillResponse {
   const base = baseUrl.replace(/\/+$/, "");
   return {
@@ -22,8 +34,8 @@ export function buildSkillResponse(baseUrl: string): SkillResponse {
       outputs: [
         {
           textCard: {
-            title: "냄새 제보",
-            description: "버튼을 누르면 위치와 냄새 세기만 골라 제보할 수 있어요.",
+            title: SKILL_TITLE,
+            description: SKILL_DESCRIPTION,
             buttons: [
               { label: "제보하러 가기", action: "webLink", webLinkUrl: `${base}/report` },
               { label: "오늘 지도 보기", action: "webLink", webLinkUrl: `${base}/map` },

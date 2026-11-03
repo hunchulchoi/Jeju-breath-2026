@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "./pg";
-import { buildSkillResponse, checkSkillSecret } from "@/lib/kakao";
+import { buildSkillResponse, checkSkillSecret, SKILL_TITLE, SKILL_DESCRIPTION } from "@/lib/kakao";
 
 let db: Awaited<ReturnType<typeof testDb>>;
 beforeAll(async () => {
@@ -25,8 +25,12 @@ describe("스킬 응답", () => {
     const res = buildSkillResponse("https://x.example/") as any;
     const card = res.template.outputs[0].textCard;
     expect(res.version).toBe("2.0");
-    expect(card.title).toBe("냄새 제보");
-    expect(card.description).toBe("버튼을 누르면 위치와 냄새 세기만 골라 제보할 수 있어요.");
+    expect(card.title).toBe(SKILL_TITLE);
+    expect(card.description).toBe(SKILL_DESCRIPTION);
+    expect(card.description).toContain("[제보하러 가기]");
+    // 카카오 textCard: 제목 50자 이하, 제목+설명 400자 이하
+    expect([...card.title].length).toBeLessThanOrEqual(50);
+    expect([...card.title].length + [...card.description].length).toBeLessThanOrEqual(400);
     expect(card.buttons.map((b: any) => b.webLinkUrl)).toEqual(["https://x.example/report", "https://x.example/map"]);
     for (const b of card.buttons) {
       expect(b.action).toBe("webLink");
