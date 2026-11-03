@@ -25,6 +25,17 @@ beforeEach(() => db.reset());
 const count = async () => (await db.query<{ c: number }>("SELECT COUNT(*)::int c FROM reports")).rows[0].c;
 const one = async <T,>(sql: string) => (await db.query<T>(sql)).rows[0];
 
+describe("parseReportBody: draft_token", () => {
+  it("draft_token이 있으면 user_id·text 없이도 통과하고 본문 값은 무시한다", () => {
+    const { user_id: _u, text: _t, ...rest } = base;
+    const r = parseReportBody({ ...rest, draft_token: "abcdefghijklmnopqrstuv", text: "무시" });
+    expect(r).toMatchObject({ ok: true, input: { draft_token: "abcdefghijklmnopqrstuv", text: "", user_id: undefined } });
+  });
+  it("형식이 틀린 draft_token은 400", () => {
+    expect(parseReportBody({ ...base, draft_token: "x" })).toMatchObject({ ok: false, status: 400 });
+  });
+});
+
 describe("FR-2: 위치 없으면 저장하지 않음", () => {
   it("API 본문에 lat/lng 없으면 400", async () => {
     const { lat: _lat, lng: _lng, ...noLoc } = base;

@@ -1,4 +1,5 @@
 import type { DB, Queryable } from "./db";
+import { consumeDraft, isDraftToken } from "./kakao";
 import { hashUserId } from "./hash";
 import { maskPersonalInfo } from "./mask";
 import {
@@ -33,7 +34,12 @@ export function validateText(text: unknown): { ok: true; text: string } | { ok: 
 }
 
 export interface ReportInput {
-  user_id: string;
+  /** 브라우저가 만든 ID. user_hash가 있으면 쓰지 않는다 */
+  user_id?: string;
+  /** 이미 해시된 제보자 값 (카카오 초안 경로) */
+  user_hash?: string;
+  /** 카카오 초안 token (파싱 결과일 뿐, 소비는 submitReport 옵션으로 한다) */
+  draft_token?: string;
   text: string;
   lat: number;
   lng: number;
@@ -55,11 +61,22 @@ export function parseReportBody(body: unknown): ParseResult {
   if (typeof body !== "object" || body === null) return bad("잘못된 요청이에요.");
   const b = body as Record<string, unknown>;
 
-  if (typeof b.user_id !== "string" || b.user_id.length < 8 || b.user_id.length > 100) {
-    return bad("user_id가 필요해요.");
+  let draftToken: string | undefined;
+  let userId: string | undefined;
+  let textValue = "";
+  if (b.draft_token !== undefined) {
+    // 초안 경로: 제보자와 문장은 서버의 초안 값을 쓰므로 본문 값은 무시한다
+    if (!isDraftToken(b.draft_token)) return bad("잘못된 요청이에요.");
+    draftToken = b.draft_token;
+  } else {
+    if (typeof b.user_id !== "string" || b.user_id.length < 8 || b.user_id.length > 100) {
+      return bad("user_id가 필요해요.");
+    }
+    const text = validateText(b.text);
+    if (!text.ok) return bad(text.error);
+    userId = b.user_id;
+    textValue = text.text;
   }
-  const text = validateText(b.text);
-  if (!text.ok) return bad(text.error);
   if (typeof b.lat !== "number" || typeof b.lng !== "number") {
     return bad("위치가 없어 저장하지 않았어요.");
   }
@@ -77,8 +94,9 @@ export function parseReportBody(body: unknown): ParseResult {
   return {
     ok: true,
     input: {
-      user_id: b.user_id,
-      text: text.text,
+      user_id: userId,
+      draft_token: draftToken,
+      text: textValue,
       lat: b.lat,
       lng: b.lng,
       accuracy: typeof b.accuracy === "number" ? b.accuracy : undefined,
@@ -100,10 +118,23 @@ export type SubmitResult =
       today_nearby_count: number;
       reported_at: string;
     }
-  | { ok: false; problem: LocationProblem };
+  | { ok: false; problem: LocationProblem }
+  | { ok: false; problem: "draft_used" };
+
+class DraftUsedError extends Error {}
+
+export interface SubmitOptions {
+  /** 저장과 같은 트랜잭션에서 소비할 카카오 초안 token */
+  consumeDraftToken?: string;
+}
 
 /** 위치 검사 → 중복 → 허위 의심 판정 → 저장. 원좌표는 판정 직후 지운다. */
-export async function submitReport(db: DB, input: ReportInput, now?: Date): Promise<SubmitResult> {
+export async function submitReport(
+  db: DB,
+  input: ReportInput,
+  now?: Date,
+  options: SubmitOptions = {},
+): Promise<SubmitResult> {
   const loc = checkLocation(input);
   if (!loc.ok) {
     await recordLocationFailure(db, now ?? new Date());
@@ -111,16 +142,23 @@ export async function submitReport(db: DB, input: ReportInput, now?: Date): Prom
   }
   const point = loc.point;
   const grid = toGrid(point);
-  const userHash = hashUserId(input.user_id);
+  const userHash = input.user_hash ?? (input.user_id ? hashUserId(input.user_id) : null);
+  if (!userHash) throw new Error("user_id 또는 user_hash가 필요해요.");
   const textMasked = maskPersonalInfo(input.text);
   const symptomsJson = JSON.stringify(input.symptoms);
 
   let at = now ?? new Date();
-  const result = await db.tx(async (q): Promise<SubmitResult> => {
+  let result: SubmitResult;
+  try {
+    result = await db.tx(async (q): Promise<SubmitResult> => {
     // 같은 제보자의 동시 요청이 중복 판정을 함께 빠져나가지 않도록 제보자 단위로 잠근다
     await q.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [userHash]);
     // 시각은 잠금을 얻은 뒤에 정한다. 먼저 시작했지만 늦게 잠근 요청도 앞선 요청의 행을 본다.
     at = now ?? new Date();
+    // 초안은 저장과 같은 트랜잭션에서 소비한다. 동시에 쓰였으면 롤백한다.
+    if (options.consumeDraftToken && !(await consumeDraft(q, options.consumeDraftToken, at))) {
+      throw new DraftUsedError();
+    }
     const since = new Date(at.getTime() - 60 * 60_000);
     const { rows } = await q.query<{ id: number; grid_lat: number; grid_lng: number; reported_at: Date }>(
       `SELECT id, grid_lat, grid_lng, reported_at FROM reports
@@ -187,7 +225,11 @@ export async function submitReport(db: DB, input: ReportInput, now?: Date): Prom
       today_nearby_count: await countNearbyToday(q, point, at, id),
       reported_at: toSeoulISO(at),
     };
-  });
+    });
+  } catch (e) {
+    if (e instanceof DraftUsedError) return { ok: false, problem: "draft_used" };
+    throw e;
+  }
 
   if (result.ok) {
     // 제보는 이미 저장됐으므로 지표 기록 실패가 저장 실패로 보이면 안 된다

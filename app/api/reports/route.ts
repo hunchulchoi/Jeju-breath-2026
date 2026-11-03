@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { getDraft } from "@/lib/kakao";
 import { dayParam, error, json, readBodyLimited } from "@/lib/http";
 import { PHOTO_RULES, attachPhoto, type PhotoResult } from "@/lib/photos";
 import { listReports, parseReportBody, submitReport } from "@/lib/reports";
@@ -9,6 +10,8 @@ const PROBLEM_MESSAGES = {
   out_of_bounds: "제주도 밖 위치라 저장하지 않았어요.",
   low_accuracy: "위치가 정확하지 않아 저장하지 않았어요.",
 } as const;
+
+const DRAFT_EXPIRED = "링크가 만료됐어요. 카카오톡에서 다시 보내 주세요.";
 
 // 사진(최대 10MB)과 본문을 합친 요청 상한
 const MAX_REQUEST_BYTES = PHOTO_RULES.maxUploadBytes + 64 * 1024;
@@ -59,7 +62,17 @@ export async function POST(req: Request) {
   const parsed = parseReportBody(body);
   if (!parsed.ok) return error(parsed.error, parsed.status);
   const db = await getDb();
-  const result = await submitReport(db, parsed.input);
+  let input = parsed.input;
+  let consumeDraftToken: string | undefined;
+  if (input.draft_token) {
+    const draft = await getDraft(db, input.draft_token);
+    if (!draft) return error(DRAFT_EXPIRED, 410);
+    // 제보자와 문장은 초안 값만 쓴다
+    input = { ...input, user_id: undefined, user_hash: draft.user_hash, text: draft.text };
+    consumeDraftToken = draft.token;
+  }
+  const result = await submitReport(db, input, undefined, { consumeDraftToken });
+  if (!result.ok && result.problem === "draft_used") return error(DRAFT_EXPIRED, 410);
   if (!result.ok) {
     return json({ error: PROBLEM_MESSAGES[result.problem], problem: result.problem }, 422);
   }

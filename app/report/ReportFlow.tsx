@@ -99,9 +99,20 @@ function getPosition(): Promise<Coords> {
   });
 }
 
-export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
-  const [step, setStep] = useState<Step>("input");
-  const [text, setText] = useState("");
+export default function ReportFlow({
+  demoMode,
+  draft = null,
+  draftExpired = false,
+}: {
+  demoMode: boolean;
+  draft?: { token: string; text: string } | null;
+  draftExpired?: boolean;
+}) {
+  // 카카오 초안이 있으면 문장은 채워진 채 위치 확인부터 시작한다
+  const [draftToken, setDraftToken] = useState<string | null>(draft?.token ?? null);
+  const [step, setStep] = useState<Step>(draft ? "location" : "input");
+  const [text, setText] = useState(draft?.text ?? "");
+  const [expiredNotice, setExpiredNotice] = useState(draftExpired);
   const [inputError, setInputError] = useState("");
   const [useDemoCoords, setUseDemoCoords] = useState(false);
   const [coords, setCoords] = useState<Coords | null>(null);
@@ -170,6 +181,8 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
     if (trimmed.length > MAX_LEN) return setInputError(`${MAX_LEN}자 이내로 적어 주세요.`);
     setText(trimmed);
     setInputError("");
+    // 새로 적은 문장은 만료된 초안과 무관하므로 안내 플래그를 끈다. 남겨 두면 이후 실패 시 [다시 시도]가 restart()를 불러 입력이 지워진다.
+    setExpiredNotice(false);
     postEvent("report_started");
     setStep("location");
   }
@@ -213,6 +226,7 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
     setStep("saving");
     const data = JSON.stringify({
       user_id: getUserId(),
+      draft_token: draftToken ?? undefined,
       text,
       lat: position.lat,
       lng: position.lng,
@@ -242,6 +256,14 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
         setStep("error");
         return;
       }
+      if (res.status === 410) {
+        // 초안이 만료됐거나 이미 쓰였다
+        setErrorMessage(body.error ?? "링크가 만료됐어요. 카카오톡에서 다시 보내 주세요.");
+        setDraftToken(null);
+        setExpiredNotice(true);
+        setStep("error");
+        return;
+      }
       if (!res.ok) throw new Error(body.error);
       setSaved({ ...body, intensity, odor_type: ex.odor_type, photo: body.photo ?? null });
       setStep("done");
@@ -258,6 +280,8 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
 
   function retry() {
     setShowHelp(false);
+    // 만료된 링크로는 다시 저장할 수 없으니 입력 단계로 돌려보낸다
+    if (expiredNotice) return restart();
     setStep("location");
   }
 
@@ -268,6 +292,8 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
     setSaved(null);
     removePhoto();
     setShowHelp(false);
+    setDraftToken(null);
+    setExpiredNotice(false);
     setStep("input");
   }
 
@@ -300,6 +326,11 @@ export default function ReportFlow({ demoMode }: { demoMode: boolean }) {
           <h1 id="step-title" ref={headingRef} tabIndex={-1}>
             지금 느끼는 냄새를 한 문장으로 보내 주세요
           </h1>
+          {expiredNotice ? (
+            <p className="notice" role="status">
+              링크가 만료됐어요. 여기에 다시 적어 주시거나 카카오톡에서 다시 보내 주세요.
+            </p>
+          ) : null}
           <form
             className="stack"
             onSubmit={(e) => {

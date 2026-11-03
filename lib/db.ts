@@ -58,6 +58,15 @@ CREATE TABLE IF NOT EXISTS event_counts (
   count INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, name)
 );
+
+-- 카카오 스킬이 받은 문장. 링크의 token으로만 열 수 있고 30분 안에 한 번만 쓴다.
+CREATE TABLE IF NOT EXISTS kakao_drafts (
+  token       TEXT PRIMARY KEY,
+  user_hash   TEXT NOT NULL,
+  text_masked TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  used_at     TIMESTAMPTZ
+);
 `;
 
 export function fromPool(pool: pg.Pool): DB {
