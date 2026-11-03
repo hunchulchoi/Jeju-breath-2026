@@ -410,6 +410,30 @@ h1[tabindex="-1"]:focus {
   border-radius: 6px;
 }
 
+.me-too {
+  margin-top: 10px;
+}
+.me-too-btn {
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--brand, #0b6b5d);
+  color: #fff;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.me-too-help {
+  margin-top: 6px;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
 /* 제보 화면 */
 .steps {
   margin: 0;

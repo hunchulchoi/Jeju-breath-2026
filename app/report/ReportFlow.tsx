@@ -256,8 +256,19 @@ export default function ReportFlow({ demoMode, today }: { demoMode: boolean; tod
       ? `오늘 제보 ${summary.total}건 · 강도 4 이상 ${summary.high_intensity}건`
       : "오늘 제보를 불러오는 중이에요";
 
-  async function submit() {
-    if (!coords || intensity === null || photoBusy) return;
+  function submit() {
+    if (intensity === null || photoBusy) return;
+    return send(intensity, odor, photoRef.current);
+  }
+
+  // [저도 악취를 느꼈어요]: 그 칸의 가장 센 제보와 같은 강도·종류로, 사진 없이 내 위치에서 보낸다
+  function submitMeToo(r: PublicReport) {
+    if (step !== "main") return;
+    return send(r.intensity, r.odor_type, null);
+  }
+
+  async function send(intensity: number, odor: OdorType, photo: Blob | null) {
+    if (!coords) return;
     const position = coords;
     setStep("saving");
     setSubmitError("");
@@ -270,7 +281,6 @@ export default function ReportFlow({ demoMode, today }: { demoMode: boolean; tod
       odor_type: odor,
       consent_version: CONSENT_VERSION,
     });
-    const photo = photoRef.current;
     let init: RequestInit;
     if (photo) {
       const form = new FormData();
@@ -405,7 +415,12 @@ export default function ReportFlow({ demoMode, today }: { demoMode: boolean; tod
             </div>
           ) : null}
 
-          <OdorMap reports={reports} me={coords} className="map report-map" />
+          <OdorMap
+            reports={reports}
+            me={coords}
+            className="map report-map"
+            meToo={{ origin: loc === "ok" ? coords : null, onPick: submitMeToo, disabled: step === "saving" }}
+          />
           <Legend withMe />
           <p className="summary" aria-live="polite">
             {summaryText}

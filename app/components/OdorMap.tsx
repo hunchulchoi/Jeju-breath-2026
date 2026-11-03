@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LayerGroup, Map as LeafletMap } from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { distanceMeters, RULES } from "@/lib/rules";
 import { formatTime } from "@/lib/time";
 import { INTENSITY_COLORS, INTENSITY_LABELS, REVIEW_COLOR, type PublicReport } from "@/lib/types";
 
@@ -13,6 +14,13 @@ export interface MyPosition {
   lat: number;
   lng: number;
   accuracy: number;
+}
+
+/** [저도 악취를 느꼈어요] 설정. 없으면 버튼을 만들지 않는다 (/map). */
+export interface MeToo {
+  origin: { lat: number; lng: number } | null;
+  onPick: (r: PublicReport) => void;
+  disabled?: boolean;
 }
 
 export const photoSrc = (id: number) => `/api/photos/${id}`;
@@ -60,12 +68,14 @@ export default function OdorMap({
   active = true,
   className = "map",
   onTileFailed,
+  meToo,
 }: {
   reports: PublicReport[] | null;
   me?: MyPosition | null;
   active?: boolean;
   className?: string;
   onTileFailed?: () => void;
+  meToo?: MeToo;
 }) {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -77,6 +87,19 @@ export default function OdorMap({
   useEffect(() => {
     tileFailedRef.current = onTileFailed;
   }, [onTileFailed]);
+
+  // 팝업 버튼이 항상 최신 값을 읽도록 ref에 둔다
+  const meTooRef = useRef(meToo);
+  const reportsRef = useRef(reports);
+  useEffect(() => {
+    meTooRef.current = meToo;
+    reportsRef.current = reports;
+  });
+  // 제출이 시작되면 열려 있는 팝업(버튼)을 닫는다
+  const meTooDisabled = !!meToo?.disabled;
+  useEffect(() => {
+    if (meTooDisabled) mapRef.current?.closePopup();
+  }, [meTooDisabled]);
 
   // 지도 만들기 (브라우저에서만)
   useEffect(() => {
@@ -97,6 +120,23 @@ export default function OdorMap({
         if (!anyTileLoaded) tileFailedRef.current?.();
       });
       tiles.addTo(map);
+      // 팝업이 열릴 때마다 새로 만들어진 버튼에 직접 클릭 리스너를 붙인다
+      // (팝업은 클릭 전파를 막아서 지도 컨테이너 위임은 쓸 수 없다. 팝업을 닫으면 요소째 버려진다)
+      const onMeTooClick = (ev: Event) => {
+        const id = Number((ev.currentTarget as HTMLElement).dataset.meToo);
+        const cfg = meTooRef.current;
+        if (!cfg || cfg.disabled || !cfg.origin) return;
+        const r = reportsRef.current?.find((x) => x.id === id);
+        if (!r || r.needs_review) return;
+        map.closePopup();
+        cfg.onPick(r);
+      };
+      map.on("popupopen", (e) => {
+        e.popup
+          .getElement()
+          ?.querySelectorAll<HTMLButtonElement>("button[data-me-too]")
+          .forEach((b) => b.addEventListener("click", onMeTooClick));
+      });
       layerRef.current = L.layerGroup().addTo(map);
       meLayerRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
@@ -125,6 +165,18 @@ export default function OdorMap({
     const groups = [...cells.values()].sort(
       (a, b) => Number(!a[0].needs_review) - Number(!b[0].needs_review) || maxIntensity(a) - maxIntensity(b),
     );
+    // 팝업을 열 때마다 최신 위치·상태로 조건을 다시 계산한다 (조건이 안 맞으면 버튼 자체가 없다)
+    const meTooHtml = (top: PublicReport) => {
+      const cfg = meTooRef.current;
+      if (!cfg || cfg.disabled || !cfg.origin || top.needs_review) return "";
+      if (distanceMeters(cfg.origin, { lat: top.grid_lat, lng: top.grid_lng }) > RULES.nearbyMeters) return "";
+      const n = Number(top.intensity);
+      return (
+        `<div class="me-too">` +
+        `<button type="button" class="me-too-btn" data-me-too="${Number(top.id)}">저도 악취를 느꼈어요</button>` +
+        `<div class="me-too-help">내 위치에서 같은 세기(강도 ${n})로 제보돼요</div></div>`
+      );
+    };
     for (const group of groups) {
       const top = group.reduce((m, r) => (r.intensity > m.intensity ? r : m));
       const count = group.length;
@@ -148,10 +200,11 @@ export default function OdorMap({
             popupPhotos(r),
         );
       L.marker([top.grid_lat, top.grid_lng], { icon, title: label, alt: label, keyboard: true })
-        .bindPopup(
+        .bindPopup(() =>
           `<strong>이 근처 제보 ${count}건 · 최고 강도 ${top.intensity}</strong>` +
             (top.needs_review ? "<br><em>확인 필요 (요약에서 제외)</em>" : "") +
-            `<br>${lines.join("<br>")}`,
+            `<br>${lines.join("<br>")}` +
+            meTooHtml(top),
         )
         .addTo(layer);
     }
