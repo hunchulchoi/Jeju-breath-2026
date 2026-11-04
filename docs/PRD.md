@@ -309,7 +309,9 @@ PoC의 `user_id`는 브라우저 localStorage에 만든 랜덤 UUID. 서버에�
 구현 (`lib/kakao.ts`, `app/api/kakao/skill/route.ts`):
 
 1. 스킬은 발화와 사용자 키를 읽지도 저장하지도 않고, DB도 쓰지 않는다. `report_started`는 세지 않는다 (화면이 `/api/events`로 보낸다).
-2. 회신은 `textCard`: 제목 "냄새 제보", 설명 "버튼을 누르면 위치와 냄새 세기만 골라 제보할 수 있어요.", 버튼 [제보하러 가기](`${PUBLIC_BASE_URL}/report`)와 [오늘 지도 보기](`/map`). 버튼 label은 14자 이내.
+2. 회신은 블록 이름(`userRequest.block.name`)에 따라 다르다. 버튼은 둘 다 [제보하러 가기](`${PUBLIC_BASE_URL}/report`)와 [오늘 지도 보기](`/map`)이고, label은 14자 이내다.
+   - 웰컴·폴백·'악취 제보 시작' 블록: `textCard`, 제목 "냄새 때문에 불편하셨나요?", 3단계 안내 문구.
+   - '이용 안내' 블록(이름에 "안내" 포함): `basicCard`, 제목 "이용 안내", 설명 한 줄. 썸네일은 6개 항목을 큰 글씨로 담은 800×800 이미지 `/brand/guide.png`(altText "제주숨결봇 이용 안내", `fixedRatio: true`)다. 이미지는 `scripts/make-guide-image.mjs`로 만든다.
 3. 보안: 스킬 요청은 `X-Skill-Secret` 헤더가 `KAKAO_SKILL_SECRET`과 같아야 한다(상수 시간 비교).
 
 오픈빌더 설정: 스킬 URL `https://<배포주소>/api/kakao/skill`, 헤더 `X-Skill-Secret: <KAKAO_SKILL_SECRET 값>`, 메소드 POST. 폴백 블록(또는 모든 발화)의 봇 응답을 이 스킬로 연결하고 스킬데이터 사용으로 설정한다.

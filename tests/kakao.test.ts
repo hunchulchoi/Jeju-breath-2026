@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "./pg";
-import { blockNameOf, buildSkillResponse, skillLogFields, checkSkillSecret, GUIDE_DESCRIPTION, GUIDE_TITLE, SKILL_TITLE, SKILL_DESCRIPTION } from "@/lib/kakao";
+import { blockNameOf, buildSkillResponse, skillLogFields, checkSkillSecret, GUIDE_DESCRIPTION, GUIDE_TITLE, GUIDE_IMAGE_ALT, SKILL_TITLE, SKILL_DESCRIPTION } from "@/lib/kakao";
 
 let db: Awaited<ReturnType<typeof testDb>>;
 beforeAll(async () => {
@@ -85,10 +85,17 @@ describe("블록별 문구", () => {
   const card = (r: ReturnType<typeof buildSkillResponse>) =>
     (r as { template: { outputs: { textCard: { title: string; description: string; buttons: unknown[] } }[] } }).template.outputs[0].textCard;
   it("이용 안내 블록이면 안내 문구, 그 밖에는 웰컴 문구. 버튼은 같다", () => {
-    const guide = card(buildSkillResponse("https://x", blockNameOf({ userRequest: { block: { name: "이용 안내" } } })));
+    const out = (buildSkillResponse("https://x/", blockNameOf({ userRequest: { block: { name: "이용 안내" } } })) as {
+      template: { outputs: { basicCard?: { title: string; description: string; thumbnail: { imageUrl: string; altText: string; fixedRatio: boolean }; buttons: { label: string; webLinkUrl: string }[] }; textCard?: unknown }[] };
+    }).template.outputs[0];
+    expect(out.textCard).toBeUndefined();
+    const guide = out.basicCard!;
     expect(guide.title).toBe(GUIDE_TITLE);
-    expect(guide.buttons).toHaveLength(2);
-    expect([...guide.title].length + [...guide.description].length).toBeLessThanOrEqual(400);
+    expect(guide.thumbnail).toEqual({ imageUrl: "https://x/brand/guide.png", altText: GUIDE_IMAGE_ALT, fixedRatio: true });
+    expect(guide.buttons.map((b) => b.label)).toEqual(["제보하러 가기", "오늘 지도 보기"]);
+    expect(guide.description.includes("\n")).toBe(false);
+    // 카카오 basicCard(썸네일 있음): 제목+설명 230자 안쪽
+    expect([...guide.title].length + [...guide.description].length).toBeLessThanOrEqual(230);
     expect(card(buildSkillResponse("https://x", blockNameOf({ userRequest: { block: { name: "악취 제보 시작" } } }))).title).toBe(SKILL_TITLE);
     expect(card(buildSkillResponse("https://x", blockNameOf({ userRequest: { block: { name: "폴백 블록" } } }))).title).toBe(SKILL_TITLE);
     expect(card(buildSkillResponse("https://x", blockNameOf(null))).description).toBe(SKILL_DESCRIPTION);

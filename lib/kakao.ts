@@ -53,21 +53,46 @@ export function skillLogFields(body: unknown): { block: string; surface: string 
   return { block: blockNameOf(body).slice(0, 40), surface: typeof surface === "string" ? surface.slice(0, 40) : "" };
 }
 
+/** 이용 안내 basicCard의 썸네일 (800×800, scripts/make-guide-image.mjs로 생성). 6개 항목은 GUIDE_DESCRIPTION과 같은 내용 */
+export const GUIDE_IMAGE_PATH = "/brand/guide.png";
+export const GUIDE_IMAGE_ALT = "제주숨결봇 이용 안내";
+/** basicCard 설명은 한 줄만 (자세한 내용은 이미지) */
+export const GUIDE_CARD_DESCRIPTION = "위치와 냄새 세기만 고르면 제보돼요.";
+
 export function buildSkillResponse(baseUrl: string, blockName = ""): SkillResponse {
   const guide = blockName.includes("안내");
   const base = baseUrl.replace(/\/+$/, "");
+  const buttons = [
+    { label: "제보하러 가기", action: "webLink", webLinkUrl: `${base}/report` },
+    { label: "오늘 지도 보기", action: "webLink", webLinkUrl: `${base}/map` },
+  ];
+  if (guide) {
+    // 이용 안내: 6개 항목을 큰 글씨 이미지로 보여 주는 basicCard (1:1 이미지라 fixedRatio)
+    return {
+      version: "2.0",
+      template: {
+        outputs: [
+          {
+            basicCard: {
+              title: GUIDE_TITLE,
+              description: GUIDE_CARD_DESCRIPTION,
+              thumbnail: { imageUrl: `${base}${GUIDE_IMAGE_PATH}`, altText: GUIDE_IMAGE_ALT, fixedRatio: true },
+              buttons,
+            },
+          },
+        ],
+      },
+    };
+  }
   return {
     version: "2.0",
     template: {
       outputs: [
         {
           textCard: {
-            title: guide ? GUIDE_TITLE : SKILL_TITLE,
-            description: guide ? GUIDE_DESCRIPTION : SKILL_DESCRIPTION,
-            buttons: [
-              { label: "제보하러 가기", action: "webLink", webLinkUrl: `${base}/report` },
-              { label: "오늘 지도 보기", action: "webLink", webLinkUrl: `${base}/map` },
-            ],
+            title: SKILL_TITLE,
+            description: SKILL_DESCRIPTION,
+            buttons,
           },
         },
       ],
