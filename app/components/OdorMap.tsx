@@ -34,7 +34,7 @@ export default function OdorMap({
   return <LeafletOdorMap {...props} onTileFailed={onTileFailed} />;
 }
 
-export function Legend({ withMe = false, withAir = false }: { withMe?: boolean; withAir?: boolean }) {
+export function Legend({ withMe = false, withAir = false, withWeather = false }: { withMe?: boolean; withAir?: boolean; withWeather?: boolean }) {
   const items = [1, 2, 3, 4, 5];
   return (
     <div className="legend" aria-label="범례">
@@ -60,6 +60,12 @@ export function Legend({ withMe = false, withAir = false }: { withMe?: boolean; 
         <span>
           <span className="air-swatch" aria-hidden="true" />
           대기질 측정소
+        </span>
+      ) : null}
+      {withWeather ? (
+        <span>
+          <span className="wind-swatch" aria-hidden="true">↗</span>
+          바람(불어 가는 쪽)
         </span>
       ) : null}
     </div>

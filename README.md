@@ -35,6 +35,7 @@ npm run dev                  # http://localhost:3000
 | `app/api/*` | PRD 8장 API + 지표용 `/api/events`, `/api/metrics` |
 | `app/api/kakao` | 카카오 오픈빌더 스킬 (`KAKAO_SKILL_SECRET` 필요). 어떤 말이 와도 제보·지도 링크 카드로 회신 (발화는 읽지 않음) |
 | `lib/kakao.ts` | 스킬 비밀 헤더 검사·응답 형식 |
+| `lib/weather.ts` | 지도에 겹치는 날씨(바람): Open-Meteo 호출·캐시·풍향 계산. 출처를 바꿀 때 고치는 곳 |
 | `lib/rules.ts` | 위치 검사, 격자, 중복·허위 판정 |
 | `lib/db.ts` | Postgres 연결·스키마 |
 | `lib/reports.ts` | 저장·조회·요약·지표 |

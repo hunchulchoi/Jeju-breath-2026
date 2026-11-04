@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { markerZ, overflowPan, popupMaxSize, Z_REPORT_BASE } from "@/app/components/odorMapCommon";
+import { markerZ, overflowPan, popupMaxSize, Z_REPORT_BASE , weatherBadge } from "@/app/components/odorMapCommon";
 
 const map = { left: 0, top: 0, right: 400, bottom: 300 };
 const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
@@ -53,5 +53,27 @@ describe("markerZ", () => {
   it("stays above me (5) and below popup (1000)", () => {
     expect(markerZ(0, true)).toBeGreaterThanOrEqual(Z_REPORT_BASE);
     expect(markerZ(10_000, false)).toBeLessThan(1000);
+  });
+});
+
+describe("weatherBadge 바람 정보 없음과 무풍 구분 (Codex 리뷰)", () => {
+  const base = { site: "716", name: "애월", lat: 33.46, lng: 126.33, at: "2026-11-04T09:30:00+09:00", temp: 18, humidity: 65, weather_code: 3 };
+  it("풍향이 없고 풍속이 8m/s면 무풍이 아니라 정보 없음", () => {
+    const b = weatherBadge({ ...base, wind_speed: 8, wind_dir: null });
+    expect(b.html).toContain("정보 없음");
+    expect(b.popup).not.toContain("머물 수 있어요");
+  });
+  it("풍속이 없으면 정보 없음", () => {
+    expect(weatherBadge({ ...base, wind_speed: null, wind_dir: 90 }).html).toContain("정보 없음");
+  });
+  it("풍속 0.3m/s면 무풍 안내", () => {
+    const b = weatherBadge({ ...base, wind_speed: 0.3, wind_dir: null });
+    expect(b.html).toContain("무풍");
+    expect(b.popup).toContain("머물 수 있어요");
+  });
+  it("동풍 6m/s면 화살표와 서쪽 안내", () => {
+    const b = weatherBadge({ ...base, wind_speed: 6, wind_dir: 90 });
+    expect(b.popup).toContain("동풍");
+    expect(b.popup).toContain("서쪽으로");
   });
 });

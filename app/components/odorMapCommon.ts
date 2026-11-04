@@ -11,9 +11,11 @@ import {
   INTENSITY_TEXT,
   REVIEW_COLOR,
   type AirStation,
+  type WeatherPoint,
   type PublicReport,
   ODOR_DISPLAY,
 } from "@/lib/types";
+import { WEATHER_SOURCE, isCalm, weatherText, windDirName, windFromLabel, windToDeg } from "@/lib/weather";
 
 /** Leaflet·카카오 두 지도 구현이 함께 쓰는 순수 로직 (묶음·색·정렬·팝업 문구) */
 
@@ -41,6 +43,8 @@ export interface OdorMapProps {
   meToo?: MeToo;
   /** 대기질 측정소. 없거나 비어 있으면 그리지 않는다. 지도 맞춤에는 영향을 주지 않는다 */
   air?: AirStation[];
+  /** 날씨(바람) 지점. 없거나 비어 있으면 그리지 않는다. 지도 맞춤에는 영향을 주지 않는다 */
+  weather?: WeatherPoint[];
 }
 
 export const photoSrc = (id: number) => `/api/photos/${id}`;
@@ -186,6 +190,54 @@ export function airBadge(st: AirStation) {
       `PM2.5 ${airValue(st.pm25, "㎍/㎥")}<br>` +
       `오존 ${airValue(st.o3, "ppm")}<br>` +
       `<span class="muted small">출처: 제주특별자치도 보건환경연구원</span>`,
+  };
+}
+
+/** 바람 화살표 오버레이 (원형 반투명 배경 + 화살표 + 풍속). 측정소 배지와 겹치지 않게 오른쪽 위로 비켜 놓는다 */
+export function weatherBadge(w: WeatherPoint) {
+  // 바람 정보가 없으면 '무풍'과 구분한다 (Codex 리뷰). 무풍 안내는 풍속을 알고 0.5m/s 미만일 때만.
+  const missing = w.wind_speed === null || (w.wind_dir === null && !isCalm(w.wind_speed));
+  const calm = !missing && isCalm(w.wind_speed);
+  const speed = w.wind_speed === null ? "-" : `${w.wind_speed.toFixed(1)}m/s`;
+  const dot = (fill: string) =>
+    `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="${fill}"/></svg>`;
+  const arrow = missing
+    ? dot("#94A3B8")
+    : calm
+      ? dot("#0F766E")
+      : `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" style="transform:rotate(${Math.round(windToDeg(w.wind_dir!))}deg)">` +
+        `<path d="M12 2 L19 21 L12 16.5 L5 21 Z" fill="#0F766E" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg>`;
+  const title = missing
+    ? `${w.name} 바람 정보 없음`
+    : calm
+      ? `${w.name} 바람 거의 없음`
+      : `${w.name} ${windFromLabel(w.wind_dir!)} ${speed}`;
+  const lines: string[] = [];
+  if (missing) {
+    lines.push("지금은 바람 정보를 받지 못했어요");
+  } else if (calm) {
+    lines.push("바람이 거의 없어 냄새가 머물 수 있어요");
+  } else {
+    lines.push(
+      `${windFromLabel(w.wind_dir!)} ${speed} — 냄새는 ${windDirName(windToDeg(w.wind_dir!))}쪽으로 퍼질 수 있어요`,
+    );
+  }
+  if (w.temp !== null) lines.push(`기온 ${w.temp.toFixed(1)}℃`);
+  if (w.humidity !== null) lines.push(`습도 ${Math.round(w.humidity)}%`);
+  lines.push(`하늘 상태: ${weatherText(w.weather_code)}`);
+  return {
+    width: 52,
+    height: 60,
+    /** 팝업을 마커 위로 띄울 거리(px, 마커 중심 기준) */
+    popupLift: 38,
+    title,
+    html:
+      `<div class="wind-badge"><div class="wind-disc">${arrow}</div>` +
+      `<div class="wind-speed">${missing ? "정보 없음" : calm ? "무풍" : escapeHtml(speed)}</div></div>`,
+    popup:
+      `<strong>${escapeHtml(w.name)} 날씨</strong><br>` +
+      lines.map(escapeHtml).join("<br>") +
+      `<br><span class="muted small">${WEATHER_SOURCE} · ${escapeHtml(w.at.slice(11, 16))} 기준</span>`,
   };
 }
 

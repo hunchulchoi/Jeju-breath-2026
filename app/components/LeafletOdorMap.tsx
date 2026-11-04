@@ -13,6 +13,7 @@ import {
   pickMeToo,
   reportPopupHtml,
   useLatestRefs,
+  weatherBadge,
   type OdorMapProps,
 } from "./odorMapCommon";
 
@@ -26,6 +27,7 @@ export default function LeafletOdorMap({
   className = "map",
   meToo,
   air,
+  weather,
   onTileFailed,
 }: OdorMapProps & { onTileFailed?: () => void }) {
   const mapEl = useRef<HTMLDivElement>(null);
@@ -33,6 +35,7 @@ export default function LeafletOdorMap({
   const layerRef = useRef<LayerGroup | null>(null);
   const meLayerRef = useRef<LayerGroup | null>(null);
   const airLayerRef = useRef<LayerGroup | null>(null);
+  const weatherLayerRef = useRef<LayerGroup | null>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const [ready, setReady] = useState(0);
   const tileFailedRef = useRef(onTileFailed);
@@ -82,6 +85,7 @@ export default function LeafletOdorMap({
       // 측정소는 제보 마커(markerPane 600)보다 아래 층에 그린다
       map.createPane("air").style.zIndex = "550";
       airLayerRef.current = L.layerGroup().addTo(map);
+      weatherLayerRef.current = L.layerGroup().addTo(map);
       layerRef.current = L.layerGroup().addTo(map);
       meLayerRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
@@ -132,6 +136,27 @@ export default function LeafletOdorMap({
         .addTo(layer);
     }
   }, [air, ready]);
+
+  // 날씨(바람 화살표): 측정소 배지 오른쪽 위로 비켜 놓는다 (CSS transform). 같은 "air" 층이라 제보 마커보다 아래
+  useEffect(() => {
+    const L = leafletRef.current;
+    const layer = weatherLayerRef.current;
+    if (!L || !layer) return;
+    layer.clearLayers();
+    for (const w of weather ?? []) {
+      const b = weatherBadge(w);
+      const icon = L.divIcon({
+        className: "",
+        html: b.html,
+        iconSize: [b.width, b.height],
+        iconAnchor: [b.width / 2, b.height / 2],
+        popupAnchor: [62, -34 - b.popupLift],
+      });
+      L.marker([w.lat, w.lng], { icon, pane: "air", title: b.title, alt: b.title, keyboard: true })
+        .bindPopup(() => b.popup)
+        .addTo(layer);
+    }
+  }, [weather, ready]);
 
   // 내 위치 표시
   useEffect(() => {

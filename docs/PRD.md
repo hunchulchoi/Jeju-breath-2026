@@ -184,6 +184,15 @@ flowchart TD
 - 외부 API가 실패해도 지도와 제보는 정상 동작하고, "대기 정보를 불러오지 못했어요"만 표시한다.
 - 가이드에는 있지만 실제 응답에 없는 풍향·풍속·기온·습도는 표시하지 않는다. 바람 정보는 별도 출처(기상청)가 필요하다.
 
+### FR-11 날씨(바람) 겹쳐 보기 (P1)
+
+- 출처: Open-Meteo(인증키 없음). 서버(`/api/weather`)가 대기 측정소 12곳과 같은 좌표의 현재 기온·습도·풍속·풍향·날씨 코드를 한 번에 받아 10분 캐시한다. 출처를 기상청 등으로 바꿀 때는 `lib/weather.ts`만 고치면 되게 모아 두었다.
+- `/map`과 `/report` 지도에 지점마다 바람 화살표(반투명 흰 원 + 청록 화살표 + 풍속)를 측정소 배지 오른쪽 위에 표시한다. 화살표는 바람이 불어 가는 쪽(냄새가 퍼질 수 있는 쪽)을 가리키고, 제보 마커보다 아래 층에 그린다. 지도 맞춤은 제보·내 위치 기준 그대로다.
+- 팝업: "북동풍 3.2m/s — 냄새는 남서쪽으로 퍼질 수 있어요"(0.5m/s 미만이면 "바람이 거의 없어 냄새가 머물 수 있어요"), 기온, 습도, 하늘 상태, 출처·기준 시각. 원인이나 책임을 판단하는 표현은 쓰지 않는다.
+- 지도 위 한 줄 요약 "지금 바람: 북동풍 3m/s · 12℃ · 습도 70% (애월 기준)". 기준 지점은 `/report`는 내 위치에서 가장 가까운 지점(위치 전이면 애월), `/map`은 애월.
+- [날씨 보기]로 켜고 끈다 (기본 켜짐, 브라우저에 기억). 현재 날씨만 있으므로 오늘 날짜일 때만 불러오고, 지난 날짜를 보면 "날씨는 오늘만 보여요"라고 알린다.
+- 외부 API가 실패해도 지도와 제보는 정상 동작하고, "날씨 정보를 불러오지 못했어요"만 표시한다.
+
 ### FR-10 통계 페이지 (P1)
 
 - `/stats`: 기간(오늘·최근 7일·최근 30일)을 고르면 제보 건수·강도 4 이상·같은 곳 다시 제보(합쳐짐)·위치 실패 타일과 차트를 보여 준다. 숫자만 집계하며 위치·제보자 정보는 없다.
@@ -261,6 +270,7 @@ CREATE TABLE location_failures (
 | POST | `/api/reports` | `{ user_id, lat, lng, accuracy, intensity, odor_type, consent_version }` → 검증·저장 → `{ id, merged, needs_review, today_nearby_count, reported_at, photo }`. `consent_version`이 현재 `CONSENT_VERSION`과 다르거나 없으면 400 "개인정보·위치정보 동의가 필요해요.". lat/lng 없거나 강도가 1\~5 정수가 아니면 400. `odor_type`이 목록 밖이면 '알 수 없음'. 위치 실패는 422. 그 밖의 필드(`text`, `symptoms` 등)는 무시하고 저장하지 않는다. 사진을 붙이면 multipart (`data`: 위 JSON 문자열, `photo`: 이미지) |
 | POST | `/api/events` | `{ name }` (`report_started`, `map_viewed`) → 날짜별 이벤트 수 +1 (식별자 없음) |
 | GET | `/api/air?date=YYYY-MM-DD` | 측정소별 최신 대기질 `{ date, stations[], source }`. 외부 API 실패 시 `stations: []`와 `error` |
+| GET | `/api/weather` | 지점별 현재 날씨 `{ updated_at, points[], source }` (Open-Meteo). 외부 API 실패 시 200과 `points: []`, `error` |
 | GET | `/api/photos/{id}` | 공개 가능한 제보 사진 (확인 필요 제보는 404) |
 | POST | `/api/location-failures` | 본문 없음. 오늘 날짜 카운트 +1 |
 | GET | `/api/reports?date=YYYY-MM-DD` | 해당 날짜 제보 목록(격자 좌표만, `user_hash` 제외, `photo_ids` 포함) |

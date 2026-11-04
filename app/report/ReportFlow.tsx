@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import OdorMap, { Legend } from "../components/OdorMap";
+import { WeatherSource, WeatherToggle, WindSummary, useShowWeather, useWeather } from "../components/WeatherToggle";
 import { AirSource, AirToggle, useAirStations, useShowAir } from "../components/AirToggle";
 import { TopBar } from "../components/TopBar";
 import ConsentStep from "./ConsentStep";
@@ -160,6 +161,8 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
   const startedSent = useRef(false);
   const [showAir, setShowAir] = useShowAir();
   const { air, failed: airFailed } = useAirStations(step === "main" || step === "saving" ? today : null, showAir);
+  const [showWeather, setShowWeather] = useShowWeather();
+  const { weather, failed: weatherFailed } = useWeather(showWeather && (step === "main" || step === "saving"));
 
   // 저장된 동의가 현재 문구 버전과 같으면 안내·동의를 건너뛴다
   useEffect(() => {
@@ -433,16 +436,20 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
           ) : null}
 
           <AirToggle show={showAir} onChange={setShowAir} failed={airFailed} />
+          <WeatherToggle show={showWeather} onChange={setShowWeather} failed={weatherFailed} />
+          {showWeather ? <WindSummary points={weather} origin={coords} /> : null}
           <OdorMap
             kakaoKey={kakaoKey}
             reports={reports}
             air={showAir ? air : undefined}
+            weather={showWeather ? weather : undefined}
             me={coords}
             className="map report-map"
             meToo={{ origin: loc === "ok" ? coords : null, onPick: submitMeToo, disabled: step === "saving" }}
           />
-          <Legend withMe withAir={showAir} />
+          <Legend withMe withAir={showAir} withWeather={showWeather} />
           {showAir ? <AirSource /> : null}
+          {showWeather ? <WeatherSource /> : null}
           <p className="summary" aria-live="polite">
             {summaryText}
           </p>

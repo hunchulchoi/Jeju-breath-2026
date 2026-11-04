@@ -103,3 +103,21 @@ export const AIR_UNKNOWN_LABEL = "정보 없음";
 // 흰 글자 대비 4.5:1 이상 (좋음 6.7, 보통 5.0, 나쁨 4.9, 매우나쁨 6.5, 없음 4.8)
 export const AIR_CAI_COLORS: Record<number, string> = { 1: "#1D4ED8", 2: "#15803D", 3: "#A16207", 4: "#B91C1C" };
 export const AIR_UNKNOWN_COLOR = "#6B7280";
+
+/** 지도에 표시하는 지점별 현재 날씨 (Open-Meteo). 지점은 대기질 측정소와 같은 자리 */
+export interface WeatherPoint {
+  site: string;
+  name: string;
+  lat: number;
+  lng: number;
+  /** 기준 시각 KST ISO, 예: 2026-11-04T09:30:00+09:00 */
+  at: string;
+  temp: number | null;
+  humidity: number | null;
+  /** m/s */
+  wind_speed: number | null;
+  /** 바람이 불어오는 방향(도, 북=0, 시계 방향) */
+  wind_dir: number | null;
+  /** WMO 날씨 코드 */
+  weather_code: number | null;
+}

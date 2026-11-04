@@ -15,6 +15,7 @@ import {
   pickMeToo,
   reportPopupHtml,
   useLatestRefs,
+  weatherBadge,
   type OdorMapProps,
 } from "./odorMapCommon";
 import { KAKAO_LOAD_TIMEOUT_MS, loadKakao } from "./kakaoSdk";
@@ -22,6 +23,7 @@ import { KAKAO_LOAD_TIMEOUT_MS, loadKakao } from "./kakaoSdk";
 const ME_LEVEL = 5;
 const MAX_FIT_DETAIL_LEVEL = 4; // 제보가 한 곳이어도 이보다 더 확대하지 않는다
 const Z_AIR = 1;
+const Z_WEATHER = 2;
 const Z_ME = 5;
 const POPUP_MARGIN = 12;
 const Z_POPUP = 1000;
@@ -62,6 +64,7 @@ export default function KakaoOdorMap({
   className = "map",
   meToo,
   air,
+  weather,
   appKey,
   onFail,
 }: OdorMapProps & { appKey: string; onFail: () => void }) {
@@ -70,6 +73,7 @@ export default function KakaoOdorMap({
   const mapRef = useRef<any>(null);
   const reportOvRef = useRef<any[]>([]);
   const airOvRef = useRef<any[]>([]);
+  const weatherOvRef = useRef<any[]>([]);
   const meOvRef = useRef<any[]>([]);
   const popupRef = useRef<any>(null);
   const [ready, setReady] = useState(0);
@@ -211,7 +215,7 @@ export default function KakaoOdorMap({
     return () => {
       disposed = true;
       clearTimeout(verifyTimer);
-      [reportOvRef, airOvRef, meOvRef].forEach((r) => r.current.forEach((o) => o.setMap(null)));
+      [reportOvRef, airOvRef, weatherOvRef, meOvRef].forEach((r) => r.current.forEach((o) => o.setMap(null)));
       popupRef.current?.setMap(null);
       popupRef.current = null;
       mapRef.current = null;
@@ -271,6 +275,30 @@ export default function KakaoOdorMap({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [air, ready]);
+
+  // 날씨(바람 화살표). 측정소 배지 오른쪽 위에 비켜 놓고, 제보 마커보다 아래
+  useEffect(() => {
+    const kakao = kakaoRef.current;
+    const map = mapRef.current;
+    if (!kakao || !map) return;
+    weatherOvRef.current.forEach((o) => o.setMap(null));
+    weatherOvRef.current = (weather ?? []).map((w) => {
+      const b = weatherBadge(w);
+      const el = elementFromHtml(b.html);
+      makeActivatable(el, b.title, () => openPopup(w.lat, w.lng, b.popup, b.popupLift + 30));
+      const ov = new kakao.maps.CustomOverlay({
+        position: new kakao.maps.LatLng(w.lat, w.lng),
+        content: el,
+        xAnchor: 0.5,
+        yAnchor: 0.5,
+        zIndex: Z_WEATHER,
+        clickable: true,
+      });
+      ov.setMap(map);
+      return ov;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weather, ready]);
 
   // 내 위치: 파란 점 + 정확도 원
   useEffect(() => {

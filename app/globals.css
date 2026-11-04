@@ -643,6 +643,54 @@ h1[tabindex="-1"]:focus {
   margin: 0 0 8px;
 }
 
+/* 날씨(바람): 측정소 배지의 오른쪽 위로 비켜 놓은 반투명 원 + 청록 화살표 */
+.wind-badge {
+  width: 52px;
+  height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transform: translate(62px, -34px);
+}
+.wind-disc {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(15, 118, 110, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.wind-speed {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0f4f4a;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 6px;
+  padding: 0 4px;
+  line-height: 16px;
+}
+.wind-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(15, 118, 110, 0.5);
+  color: #0f766e;
+  font-weight: 800;
+}
+.wind-summary {
+  margin: 4px 0 8px;
+  font-size: 18px;
+}
+
 /* 카카오맵: 내 위치 점, 말풍선 팝업 */
 .me-dot {
   width: 18px;

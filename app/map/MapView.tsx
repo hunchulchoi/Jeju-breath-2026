@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import OdorMap, { Legend, colorOf, photoSrc } from "../components/OdorMap";
 import { AirSource, AirToggle, useAirStations, useShowAir } from "../components/AirToggle";
+import { WeatherSource, WeatherToggle, WindSummary, useShowWeather, useWeather } from "../components/WeatherToggle";
 import { TopBar } from "../components/TopBar";
 import { formatTime } from "@/lib/time";
 import { INTENSITY_LABELS, type PublicReport, type Summary, INTENSITY_TEXT, ODOR_DISPLAY } from "@/lib/types";
@@ -34,6 +35,10 @@ export default function MapView({
   const [tileFailed, setTileFailed] = useState(false);
   const [showAir, setShowAir] = useShowAir();
   const { air, failed: airFailed } = useAirStations(day, showAir);
+  const [showWeather, setShowWeather] = useShowWeather();
+  const isToday = day === days[0];
+  const weatherOn = showWeather && isToday;
+  const { weather, failed: weatherFailed } = useWeather(weatherOn);
 
   // 접수 화면에서 넘어온 지도 열람만 지표로 센다
   useEffect(() => {
@@ -104,9 +109,19 @@ export default function MapView({
 
       <div hidden={tab !== "map"}>
         <AirToggle show={showAir} onChange={setShowAir} failed={airFailed} />
-        <OdorMap kakaoKey={kakaoKey} reports={reports} active={tab === "map"} onTileFailed={onTileFailed} air={showAir ? air : undefined} />
-        <Legend withAir={showAir} />
+        <WeatherToggle show={showWeather} onChange={setShowWeather} failed={weatherFailed} notToday={!isToday} />
+        {weatherOn ? <WindSummary points={weather} origin={null} /> : null}
+        <OdorMap
+          kakaoKey={kakaoKey}
+          reports={reports}
+          active={tab === "map"}
+          onTileFailed={onTileFailed}
+          air={showAir ? air : undefined}
+          weather={weatherOn ? weather : undefined}
+        />
+        <Legend withAir={showAir} withWeather={weatherOn} />
         {showAir ? <AirSource /> : null}
+        {weatherOn ? <WeatherSource /> : null}
       </div>
 
       {tab === "list" ? <ReportList reports={reports} /> : null}
