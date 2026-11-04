@@ -104,7 +104,7 @@ export const AIR_UNKNOWN_LABEL = "정보 없음";
 export const AIR_CAI_COLORS: Record<number, string> = { 1: "#1D4ED8", 2: "#15803D", 3: "#A16207", 4: "#B91C1C" };
 export const AIR_UNKNOWN_COLOR = "#6B7280";
 
-/** 지도에 표시하는 지점별 현재 날씨 (Open-Meteo). 지점은 대기질 측정소와 같은 자리 */
+/** 지도에 표시하는 지점별 현재 날씨 (기상청 또는 Open-Meteo). 지점은 대기질 측정소와 같은 자리 */
 export interface WeatherPoint {
   site: string;
   name: string;
@@ -118,6 +118,10 @@ export interface WeatherPoint {
   wind_speed: number | null;
   /** 바람이 불어오는 방향(도, 북=0, 시계 방향) */
   wind_dir: number | null;
-  /** WMO 날씨 코드 */
-  weather_code: number | null;
+  /** 표시 문구 (기상청: 강수 형태, Open-Meteo: 날씨 코드 풀이) */
+  sky: string;
+  /** 1시간 강수량(mm). 기상청만, 없으면 null */
+  rain_1h: number | null;
+  /** 출처: "기상청" | "Open-Meteo" */
+  source: string;
 }

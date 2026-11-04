@@ -15,7 +15,7 @@ import {
   type PublicReport,
   ODOR_DISPLAY,
 } from "@/lib/types";
-import { WEATHER_SOURCE, isCalm, weatherText, windDirName, windFromLabel, windToDeg } from "@/lib/weather";
+import { isCalm, sourceLabel, windDirName, windFromLabel, windToDeg } from "@/lib/weather";
 
 /** Leaflet·카카오 두 지도 구현이 함께 쓰는 순수 로직 (묶음·색·정렬·팝업 문구) */
 
@@ -224,7 +224,8 @@ export function weatherBadge(w: WeatherPoint) {
   }
   if (w.temp !== null) lines.push(`기온 ${w.temp.toFixed(1)}℃`);
   if (w.humidity !== null) lines.push(`습도 ${Math.round(w.humidity)}%`);
-  lines.push(`하늘 상태: ${weatherText(w.weather_code)}`);
+  lines.push(`하늘 상태: ${w.sky}`);
+  if (w.rain_1h !== null && w.rain_1h > 0) lines.push(`1시간 강수 ${w.rain_1h}mm`);
   return {
     width: 52,
     height: 60,
@@ -237,7 +238,7 @@ export function weatherBadge(w: WeatherPoint) {
     popup:
       `<strong>${escapeHtml(w.name)} 날씨</strong><br>` +
       lines.map(escapeHtml).join("<br>") +
-      `<br><span class="muted small">${WEATHER_SOURCE} · ${escapeHtml(w.at.slice(11, 16))} 기준</span>`,
+      `<br><span class="muted small">${escapeHtml(sourceLabel(w.source))} · ${escapeHtml(w.at.slice(11, 16))} 기준</span>`,
   };
 }
 

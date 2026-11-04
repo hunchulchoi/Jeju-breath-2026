@@ -162,7 +162,7 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
   const [showAir, setShowAir] = useShowAir();
   const { air, failed: airFailed } = useAirStations(step === "main" || step === "saving" ? today : null, showAir);
   const [showWeather, setShowWeather] = useShowWeather();
-  const { weather, failed: weatherFailed } = useWeather(showWeather && (step === "main" || step === "saving"));
+  const { weather, failed: weatherFailed, source: weatherSource } = useWeather(showWeather && (step === "main" || step === "saving"));
 
   // 저장된 동의가 현재 문구 버전과 같으면 안내·동의를 건너뛴다
   useEffect(() => {
@@ -449,7 +449,7 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
           />
           <Legend withMe withAir={showAir} withWeather={showWeather} />
           {showAir ? <AirSource /> : null}
-          {showWeather ? <WeatherSource /> : null}
+          {showWeather ? <WeatherSource source={weatherSource} /> : null}
           <p className="summary" aria-live="polite">
             {summaryText}
           </p>

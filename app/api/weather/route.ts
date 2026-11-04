@@ -1,11 +1,11 @@
-import { fetchWeather, WEATHER_SOURCE } from "@/lib/weather";
+import { fetchWeather } from "@/lib/weather";
 import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
-    const { updated_at, points } = await fetchWeather();
+    const { updated_at, points, source } = await fetchWeather();
     return NextResponse.json(
-      { updated_at, points, source: WEATHER_SOURCE },
+      { updated_at, points, source },
       { headers: { "Cache-Control": "public, max-age=300" } },
     );
   } catch (e) {

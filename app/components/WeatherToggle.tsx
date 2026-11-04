@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { distanceMeters } from "@/lib/rules";
 import type { WeatherPoint } from "@/lib/types";
-import { WEATHER_SOURCE, isCalm, weatherText, windFromLabel } from "@/lib/weather";
+import { isCalm, sourceLabel, windFromLabel } from "@/lib/weather";
 
 const KEY = "jbb_show_weather";
 /** 위치를 모를 때 기준이 되는 지점 (애월, 시연 마을 근처) */
@@ -32,14 +32,14 @@ export function useShowWeather() {
 
 /** 켜져 있을 때만 /api/weather를 불러온다. 실패해도 지도는 그대로 동작한다 */
 export function useWeather(enabled: boolean) {
-  const [state, setState] = useState<{ points: WeatherPoint[]; failed: boolean } | null>(null);
+  const [state, setState] = useState<{ points: WeatherPoint[]; failed: boolean; source?: string } | null>(null);
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     fetch("/api/weather")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((body: { points?: WeatherPoint[]; error?: string }) => {
-        if (!cancelled) setState({ points: body.points ?? [], failed: !!body.error });
+      .then((body: { points?: WeatherPoint[]; error?: string; source?: string }) => {
+        if (!cancelled) setState({ points: body.points ?? [], failed: !!body.error, source: body.source });
       })
       .catch(() => !cancelled && setState({ points: [], failed: true }));
     return () => {
@@ -47,7 +47,7 @@ export function useWeather(enabled: boolean) {
     };
   }, [enabled]);
   const current = enabled ? state : null;
-  return { weather: current?.points, failed: !!current?.failed };
+  return { weather: current?.points, failed: !!current?.failed, source: current?.source };
 }
 
 export function WeatherToggle({
@@ -73,8 +73,9 @@ export function WeatherToggle({
   );
 }
 
-export function WeatherSource() {
-  return <p className="muted small">날씨: {WEATHER_SOURCE}</p>;
+export function WeatherSource({ source }: { source?: string }) {
+  if (!source) return null;
+  return <p className="muted small">날씨: {sourceLabel(source)}</p>;
 }
 
 /** 기준 지점: 내 위치가 있으면 가장 가까운 지점, 없으면 애월 */
@@ -105,7 +106,7 @@ export function WindSummary({
   const parts = [wind];
   if (p.temp !== null) parts.push(`${Math.round(p.temp)}℃`);
   if (p.humidity !== null) parts.push(`습도 ${Math.round(p.humidity)}%`);
-  parts.push(weatherText(p.weather_code));
+  parts.push(p.sky);
   return (
     <p className="wind-summary" aria-live="polite">
       <strong>지금 바람:</strong> {parts.join(" · ")} ({p.name} 기준)

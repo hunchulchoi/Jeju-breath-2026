@@ -57,7 +57,7 @@ describe("markerZ", () => {
 });
 
 describe("weatherBadge 바람 정보 없음과 무풍 구분 (Codex 리뷰)", () => {
-  const base = { site: "716", name: "애월", lat: 33.46, lng: 126.33, at: "2026-11-04T09:30:00+09:00", temp: 18, humidity: 65, weather_code: 3 };
+  const base = { site: "716", name: "애월", lat: 33.46, lng: 126.33, at: "2026-11-04T09:30:00+09:00", temp: 18, humidity: 65, sky: "흐림", rain_1h: null, source: "Open-Meteo" };
   it("풍향이 없고 풍속이 8m/s면 무풍이 아니라 정보 없음", () => {
     const b = weatherBadge({ ...base, wind_speed: 8, wind_dir: null });
     expect(b.html).toContain("정보 없음");

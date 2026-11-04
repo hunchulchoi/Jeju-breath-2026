@@ -186,7 +186,7 @@ flowchart TD
 
 ### FR-11 날씨(바람) 겹쳐 보기 (P1)
 
-- 출처: Open-Meteo(인증키 없음). 서버(`/api/weather`)가 대기 측정소 12곳과 같은 좌표의 현재 기온·습도·풍속·풍향·날씨 코드를 한 번에 받아 10분 캐시한다. 출처를 기상청 등으로 바꿀 때는 `lib/weather.ts`만 고치면 되게 모아 두었다.
+- 출처: 기상청 API허브 초단기실황(`KMA_AUTH_KEY`, 선택). 서버(`/api/weather`)가 대기 측정소 12곳의 위경도를 기상청 격자(LCC 변환)로 바꿔 같은 격자는 한 번만 부르고(병렬, 개별 5초 타임아웃) 기온·습도·풍속·풍향·강수 형태·1시간 강수량을 얻는다. 기준 시각은 서울 시각에서 40분을 뺀 정시(HH00). 키가 없거나 지점 하나라도 실패하면 출처를 섞지 않고 통째로 Open-Meteo(인증키 없음)로 대체한다. 최종 결과를 10분 캐시하므로 활용신청 승인 뒤 최대 10분 안에 기상청으로 바뀐다. 응답 `source`는 `"기상청"` 또는 `"Open-Meteo"`이고 화면에는 "기상청 초단기실황"처럼 표시한다. 초단기실황에는 하늘(SKY)이 없어 하늘 상태는 강수 형태(비·눈·강수 없음 등)로 보인다. 1시간 강수량이 0보다 크면 팝업에 "1시간 강수 2mm"를 더한다. 출처 관련 코드는 `lib/weather.ts`에 모아 두었다.
 - `/map`과 `/report` 지도에 지점마다 바람 화살표(반투명 흰 원 + 청록 화살표 + 풍속)를 측정소 배지 오른쪽 위에 표시한다. 화살표는 바람이 불어 가는 쪽(냄새가 퍼질 수 있는 쪽)을 가리키고, 제보 마커보다 아래 층에 그린다. 지도 맞춤은 제보·내 위치 기준 그대로다.
 - 팝업: "북동풍 3.2m/s — 냄새는 남서쪽으로 퍼질 수 있어요"(0.5m/s 미만이면 "바람이 거의 없어 냄새가 머물 수 있어요"), 기온, 습도, 하늘 상태, 출처·기준 시각. 원인이나 책임을 판단하는 표현은 쓰지 않는다.
 - 지도 위 한 줄 요약 "지금 바람: 북동풍 3m/s · 12℃ · 습도 70% (애월 기준)". 기준 지점은 `/report`는 내 위치에서 가장 가까운 지점(위치 전이면 애월), `/map`은 애월.
@@ -270,7 +270,7 @@ CREATE TABLE location_failures (
 | POST | `/api/reports` | `{ user_id, lat, lng, accuracy, intensity, odor_type, consent_version }` → 검증·저장 → `{ id, merged, needs_review, today_nearby_count, reported_at, photo }`. `consent_version`이 현재 `CONSENT_VERSION`과 다르거나 없으면 400 "개인정보·위치정보 동의가 필요해요.". lat/lng 없거나 강도가 1\~5 정수가 아니면 400. `odor_type`이 목록 밖이면 '알 수 없음'. 위치 실패는 422. 그 밖의 필드(`text`, `symptoms` 등)는 무시하고 저장하지 않는다. 사진을 붙이면 multipart (`data`: 위 JSON 문자열, `photo`: 이미지) |
 | POST | `/api/events` | `{ name }` (`report_started`, `map_viewed`) → 날짜별 이벤트 수 +1 (식별자 없음) |
 | GET | `/api/air?date=YYYY-MM-DD` | 측정소별 최신 대기질 `{ date, stations[], source }`. 외부 API 실패 시 `stations: []`와 `error` |
-| GET | `/api/weather` | 지점별 현재 날씨 `{ updated_at, points[], source }` (Open-Meteo). 외부 API 실패 시 200과 `points: []`, `error` |
+| GET | `/api/weather` | 지점별 현재 날씨 `{ updated_at, points[], source }` (기상청 → 실패 시 Open-Meteo). 둘 다 실패하면 200과 `points: []`, `error` |
 | GET | `/api/photos/{id}` | 공개 가능한 제보 사진 (확인 필요 제보는 404) |
 | POST | `/api/location-failures` | 본문 없음. 오늘 날짜 카운트 +1 |
 | GET | `/api/reports?date=YYYY-MM-DD` | 해당 날짜 제보 목록(격자 좌표만, `user_hash` 제외, `photo_ids` 포함) |
@@ -311,6 +311,7 @@ USER_HASH_SALT=
 DEMO_MODE=true
 KAKAO_SKILL_SECRET=   # 오픈빌더 스킬 호출 비밀 헤더 값. 비어 있으면 스킬이 503
 PUBLIC_BASE_URL=      # 카카오 링크의 바탕 주소 (https://<배포주소>). 없으면 요청 주소
+KMA_AUTH_KEY=         # (선택) 기상청 API허브 인증키. 초단기실황조회 활용신청 필요. 없거나 실패하면 Open-Meteo
 ```
 
 ### 9.4 디렉터리 [권장]

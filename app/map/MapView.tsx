@@ -38,7 +38,7 @@ export default function MapView({
   const [showWeather, setShowWeather] = useShowWeather();
   const isToday = day === days[0];
   const weatherOn = showWeather && isToday;
-  const { weather, failed: weatherFailed } = useWeather(weatherOn);
+  const { weather, failed: weatherFailed, source: weatherSource } = useWeather(weatherOn);
 
   // 접수 화면에서 넘어온 지도 열람만 지표로 센다
   useEffect(() => {
@@ -121,7 +121,7 @@ export default function MapView({
         />
         <Legend withAir={showAir} withWeather={weatherOn} />
         {showAir ? <AirSource /> : null}
-        {weatherOn ? <WeatherSource /> : null}
+        {weatherOn ? <WeatherSource source={weatherSource} /> : null}
       </div>
 
       {tab === "list" ? <ReportList reports={reports} /> : null}
