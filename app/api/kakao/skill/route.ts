@@ -1,5 +1,5 @@
 import { error, json } from "@/lib/http";
-import { blockNameOf, buildSkillResponse, checkSkillSecret, skillLogFields } from "@/lib/kakao";
+import { blockNameOf, buildSkillResponse, checkSkillSecret, skillLogFields, skillShape } from "@/lib/kakao";
 import { toSeoulISO } from "@/lib/time";
 
 /**
@@ -20,6 +20,6 @@ export async function POST(req: Request) {
     body = null;
   }
   // 메시지가 봇까지 오는지 확인하는 용도. 시각·블록·경로만 남긴다 (발화·사용자 정보 없음)
-  console.log(JSON.stringify({ evt: "kakao_skill", at: toSeoulISO(new Date()), ...skillLogFields(body) }));
+  console.log(JSON.stringify({ evt: "kakao_skill", at: toSeoulISO(new Date()), ...skillLogFields(body), shape: skillShape(body) }));
   return json(buildSkillResponse(base, blockNameOf(body)));
 }

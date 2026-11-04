@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { testDb } from "./pg";
-import { blockNameOf, buildSkillResponse, skillLogFields, checkSkillSecret, GUIDE_DESCRIPTION, GUIDE_TITLE, GUIDE_IMAGE_ALT, SKILL_TITLE, SKILL_DESCRIPTION } from "@/lib/kakao";
+import { blockNameOf, buildSkillResponse, skillLogFields, skillShape, checkSkillSecret, GUIDE_DESCRIPTION, GUIDE_TITLE, GUIDE_IMAGE_ALT, SKILL_TITLE, SKILL_DESCRIPTION } from "@/lib/kakao";
 
 let db: Awaited<ReturnType<typeof testDb>>;
 beforeAll(async () => {
@@ -111,5 +111,29 @@ describe("skillLogFields", () => {
     expect(JSON.stringify(f)).not.toContain("user-key-123");
     expect(JSON.stringify(f)).not.toContain("010");
     expect(skillLogFields(null)).toEqual({ block: "", surface: "" });
+  });
+});
+
+describe("skillShape (임시 진단 로그)", () => {
+  it("키 이름과 발화 종류만 남기고 내용·좌표는 남기지 않는다", () => {
+    const body = {
+      userRequest: { utterance: "https://map.kakao.com/link/map/33.48531,126.49622 제주시 연동 123", params: { surface: "Kakaotalk.plusfriend" }, user: { id: "secret-user" } },
+      action: { params: { location: "x" }, detailParams: {}, clientExtra: {} },
+    };
+    const s = skillShape(body);
+    const text = JSON.stringify(s);
+    expect(text).not.toContain("33.48");
+    expect(text).not.toContain("연동");
+    expect(text).not.toContain("secret-user");
+    expect(s.utter).toMatchObject({ host: "kakaomap", coordLike: true });
+    expect(s.actionParams).toEqual({ keys: ["location"], other: 0 });
+  });
+  it("사용자 값일 수 있는 키·호스트는 남기지 않고, 이상한 입력에도 예외를 내지 않는다", () => {
+    const s = skillShape({ userRequest: { utterance: "https://user-123.example.com/x https://[" }, action: { clientExtra: { "제주시 연동 123": true } } });
+    const text = JSON.stringify(s);
+    expect(text).not.toContain("user-123");
+    expect(text).not.toContain("연동");
+    expect(s.clientExtra).toEqual({ keys: [], other: 1 });
+    expect(s.utter).toMatchObject({ host: "other" });
   });
 });

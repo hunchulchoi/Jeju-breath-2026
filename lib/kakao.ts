@@ -53,6 +53,70 @@ export function skillLogFields(body: unknown): { block: string; surface: string 
   return { block: blockNameOf(body).slice(0, 40), surface: typeof surface === "string" ? surface.slice(0, 40) : "" };
 }
 
+/**
+ * 임시 진단: 카카오톡에서 위치·사진을 보낼 때 스킬 요청에 어떤 모양으로 오는지 확인한다.
+ * 키 이름과 발화의 '종류'만 남긴다 (발화 내용·좌표·주소·사용자 키는 남기지 않는다).
+ */
+export function skillShape(body: unknown): Record<string, unknown> {
+  try {
+    return shapeOf(body);
+  } catch {
+    return { error: true };
+  }
+}
+
+/** 오픈빌더가 정하는 식별자 모양의 키만 이름을 남기고, 나머지(사용자 값일 수 있음)는 개수만 센다 */
+function safeKeys(v: unknown): { keys: string[]; other: number } {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return { keys: [], other: 0 };
+  const all = Object.keys(v);
+  const keys = all.filter((k) => /^[A-Za-z_][A-Za-z0-9_]{0,30}$/.test(k)).slice(0, 20);
+  return { keys, other: all.length - keys.length };
+}
+
+/** URL 호스트는 사용자 입력이라 그대로 남기지 않고 고정 분류로 바꾼다 */
+function hostKind(u: string): string {
+  const m = u.match(/https?:\/\/([A-Za-z0-9.-]+)/);
+  if (!m) return "";
+  const h = m[1].toLowerCase();
+  for (const [kind, re] of [
+    ["kakaomap", /(^|\.)map\.kakao\.com$|(^|\.)kko\.to$/],
+    ["kakaocdn", /(^|\.)(kakaocdn|daumcdn)\.net$/],
+    ["kakao", /(^|\.)kakao\.com$/],
+    ["naver", /(^|\.)naver\.(com|me)$/],
+    ["google", /(^|\.)(google\.com|goo\.gl)$/],
+  ] as const) {
+    if (re.test(h)) return kind;
+  }
+  return "other";
+}
+
+function shapeOf(body: unknown): Record<string, unknown> {
+  const b = (body ?? {}) as {
+    userRequest?: { utterance?: unknown; params?: unknown };
+    action?: { params?: unknown; detailParams?: unknown; clientExtra?: unknown };
+  };
+  const u = b.userRequest?.utterance;
+  const utter =
+    typeof u === "string"
+      ? {
+          type: "string",
+          len: u.length,
+          host: hostKind(u),
+          coordLike: /\b3[2-4]\.\d{3,}.{0,5}12[5-7]\.\d{3,}|\b12[5-7]\.\d{3,}.{0,5}3[2-4]\.\d{3,}/.test(u),
+          lines: u.split("\n").length,
+        }
+      : { type: typeof u };
+  return {
+    top: safeKeys(body),
+    userRequest: safeKeys(b.userRequest),
+    urParams: safeKeys(b.userRequest?.params),
+    actionParams: safeKeys(b.action?.params),
+    detailParams: safeKeys(b.action?.detailParams),
+    clientExtra: safeKeys(b.action?.clientExtra),
+    utter,
+  };
+}
+
 /** 이용 안내 basicCard의 썸네일 (800×800, scripts/make-guide-image.mjs로 생성). 6개 항목은 GUIDE_DESCRIPTION과 같은 내용 */
 export const GUIDE_IMAGE_PATH = "/brand/guide.png";
 export const GUIDE_IMAGE_ALT = "제주숨결봇 이용 안내";
