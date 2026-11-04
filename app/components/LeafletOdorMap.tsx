@@ -7,6 +7,10 @@ import {
   AEWOL_CENTER,
   accuracyRadius,
   airBadge,
+  bindInfoToggle,
+  buildInfoContent,
+  infoBubbleHtml,
+  overflowPan,
   focusPoints,
   groupReports,
   markerHtml,
@@ -16,6 +20,7 @@ import {
   weatherBadge,
   type OdorMapProps,
 } from "./odorMapCommon";
+import { CenterInfoCard } from "./MapInfo";
 
 const ME_ZOOM = 14;
 
@@ -28,6 +33,7 @@ export default function LeafletOdorMap({
   meToo,
   air,
   weather,
+  infoAnchor = "me",
   onTileFailed,
 }: OdorMapProps & { onTileFailed?: () => void }) {
   const mapEl = useRef<HTMLDivElement>(null);
@@ -38,6 +44,10 @@ export default function LeafletOdorMap({
   const weatherLayerRef = useRef<LayerGroup | null>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const [ready, setReady] = useState(0);
+  const [center, setCenterState] = useState<{ lat: number; lng: number } | null>(null);
+  const infoLayerRef = useRef<LayerGroup | null>(null);
+  const infoCollapsedRef = useRef(true);
+  const infoPannedRef = useRef(false);
   const tileFailedRef = useRef(onTileFailed);
   useEffect(() => {
     tileFailedRef.current = onTileFailed;
@@ -56,7 +66,15 @@ export default function LeafletOdorMap({
     import("leaflet").then((L) => {
       if (disposed || !mapEl.current || mapRef.current) return;
       leafletRef.current = L;
-      const map = L.map(mapEl.current, { zoomControl: true }).setView([AEWOL_CENTER.lat, AEWOL_CENTER.lng], 13);
+      const map = L.map(mapEl.current, { zoomControl: false }).setView([AEWOL_CENTER.lat, AEWOL_CENTER.lng], 13);
+      // 줌 컨트롤은 오른쪽 위 (왼쪽 위는 지도 가운데 카드 자리)
+      L.control.zoom({ position: "topright" }).addTo(map);
+      const syncCenter = () => {
+        const c = map.getCenter();
+        setCenterState({ lat: c.lat, lng: c.lng });
+      };
+      map.on("moveend", syncCenter);
+      syncCenter();
       let anyTileLoaded = false;
       const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 18,
@@ -88,6 +106,7 @@ export default function LeafletOdorMap({
       weatherLayerRef.current = L.layerGroup().addTo(map);
       layerRef.current = L.layerGroup().addTo(map);
       meLayerRef.current = L.layerGroup().addTo(map);
+      infoLayerRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
       setReady((n) => n + 1);
     });
@@ -173,6 +192,40 @@ export default function LeafletOdorMap({
     L.circleMarker(at, { radius: 9, color: "#fff", weight: 3, fillColor: "#2563eb", fillOpacity: 1, interactive: false }).addTo(layer);
   }, [me, ready]);
 
+  // 내 위치 위 대기·바람 아이콘 (마커 pane 안에서 제보 마커보다 위, 팝업 pane보다 아래)
+  useEffect(() => {
+    const L = leafletRef.current;
+    const layer = infoLayerRef.current;
+    const map = mapRef.current;
+    if (!L || !layer || !map) return;
+    layer.clearLayers();
+    if (!me || infoAnchor !== "me") return;
+    const content = buildInfoContent("내 위치", me, air, weather);
+    if (!content) return;
+    const html = `<div class="info-anchor">${infoBubbleHtml(content, infoCollapsedRef.current)}</div>`;
+    const icon = L.divIcon({ className: "info-icon", html, iconSize: [0, 0], iconAnchor: [0, 0] });
+    const marker = L.marker([me.lat, me.lng], { icon, keyboard: false, zIndexOffset: 20000 }).addTo(layer);
+    const root = marker.getElement();
+    const reveal = (delay: number) =>
+      setTimeout(() => {
+        const btn = root?.querySelector<HTMLElement>(".info-bubble");
+        if (!btn || mapRef.current !== map || !layer.hasLayer(marker)) return;
+        const { dx, dy } = overflowPan(btn.getBoundingClientRect(), map.getContainer().getBoundingClientRect(), 12);
+        if (dx || dy) map.panBy([dx, dy]);
+      }, delay);
+    if (root) {
+      L.DomEvent.disableClickPropagation(root);
+      bindInfoToggle(root, (collapsed) => {
+        infoCollapsedRef.current = collapsed;
+        if (!collapsed) reveal(0);
+      });
+    }
+    if (!infoPannedRef.current) {
+      infoPannedRef.current = true;
+      reveal(500);
+    }
+  }, [me, air, weather, infoAnchor, ready]);
+
   // 보이는 범위: 내 위치가 있으면 그 중심, 없으면 강도 4 이상이 모인 곳 (없으면 전체 제보)
   useEffect(() => {
     const L = leafletRef.current;
@@ -197,5 +250,10 @@ export default function LeafletOdorMap({
     if (active) setTimeout(() => mapRef.current?.invalidateSize(), 0);
   }, [active]);
 
-  return <div ref={mapEl} className={className} role="region" aria-label="악취 제보 지도" data-map-provider="leaflet" />;
+  return (
+    <div className="map-frame">
+      <div ref={mapEl} className={className} role="region" aria-label="악취 제보 지도" data-map-provider="leaflet" />
+      {infoAnchor === "center" ? <CenterInfoCard center={center} air={air} weather={weather} /> : null}
+    </div>
+  );
 }

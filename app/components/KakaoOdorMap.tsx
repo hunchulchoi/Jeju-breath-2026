@@ -6,6 +6,9 @@ import {
   AEWOL_CENTER,
   accuracyRadius,
   airBadge,
+  bindInfoToggle,
+  buildInfoContent,
+  infoBubbleHtml,
   focusPoints,
   groupReports,
   markerHtml,
@@ -18,6 +21,7 @@ import {
   weatherBadge,
   type OdorMapProps,
 } from "./odorMapCommon";
+import { CenterInfoCard } from "./MapInfo";
 import { KAKAO_LOAD_TIMEOUT_MS, loadKakao } from "./kakaoSdk";
 
 const ME_LEVEL = 5;
@@ -26,6 +30,7 @@ const Z_AIR = 1;
 const Z_WEATHER = 2;
 const Z_ME = 5;
 const POPUP_MARGIN = 12;
+const Z_INFO = 950; // 제보 마커(<920)보다 위, 팝업보다 아래
 const Z_POPUP = 1000;
 
 function elementFromHtml(html: string): HTMLElement {
@@ -65,6 +70,7 @@ export default function KakaoOdorMap({
   meToo,
   air,
   weather,
+  infoAnchor = "me",
   appKey,
   onFail,
 }: OdorMapProps & { appKey: string; onFail: () => void }) {
@@ -76,6 +82,9 @@ export default function KakaoOdorMap({
   const weatherOvRef = useRef<any[]>([]);
   const meOvRef = useRef<any[]>([]);
   const popupRef = useRef<any>(null);
+  const infoOvRef = useRef<any>(null);
+  const infoCollapsedRef = useRef(true);
+  const [center, setCenterState] = useState<{ lat: number; lng: number } | null>(null);
   const [ready, setReady] = useState(0);
   const [provider, setProvider] = useState<"kakao-loading" | "kakao">("kakao-loading");
   const failRef = useRef(onFail);
@@ -190,6 +199,12 @@ export default function KakaoOdorMap({
           popupRef.current?.setMap(null);
           popupRef.current = null;
         });
+        const syncCenter = () => {
+          const c = map.getCenter();
+          setCenterState({ lat: c.getLat(), lng: c.getLng() });
+        };
+        kakao.maps.event.addListener(map, "idle", syncCenter);
+        syncCenter();
         kakao.maps.event.addListener(map, "tilesloaded", () => {
           if (verified || disposed) return;
           verified = true;
@@ -218,6 +233,8 @@ export default function KakaoOdorMap({
       [reportOvRef, airOvRef, weatherOvRef, meOvRef].forEach((r) => r.current.forEach((o) => o.setMap(null)));
       popupRef.current?.setMap(null);
       popupRef.current = null;
+      infoOvRef.current?.setMap(null);
+      infoOvRef.current = null;
       mapRef.current = null;
       kakaoRef.current = null;
     };
@@ -331,6 +348,46 @@ export default function KakaoOdorMap({
     meOvRef.current.push(ov);
   }, [me, ready]);
 
+  // 내 위치 위 대기·바람 아이콘 (제보 마커보다 위, 팝업보다 아래). 기본은 아이콘만, 누르면 설명이 펼쳐진다
+  const infoPannedRef = useRef(false);
+  useEffect(() => {
+    const kakao = kakaoRef.current;
+    const map = mapRef.current;
+    if (!kakao || !map) return;
+    infoOvRef.current?.setMap(null);
+    infoOvRef.current = null;
+    if (!me || infoAnchor !== "me") return;
+    const content = buildInfoContent("내 위치", me, air, weather);
+    if (!content) return;
+    const wrap = document.createElement("div");
+    wrap.className = "info-kakao";
+    wrap.innerHTML = infoBubbleHtml(content, infoCollapsedRef.current);
+    const reveal = (delay: number) =>
+      setTimeout(() => {
+        const btn = wrap.querySelector<HTMLElement>(".info-bubble");
+        if (infoOvRef.current?.getContent() !== wrap || !btn || !mapEl.current) return;
+        const { dx, dy } = overflowPan(btn.getBoundingClientRect(), mapEl.current.getBoundingClientRect(), POPUP_MARGIN);
+        if (dx || dy) mapRef.current?.panBy(dx, dy);
+      }, delay);
+    bindInfoToggle(wrap, (collapsed) => {
+      infoCollapsedRef.current = collapsed;
+      if (!collapsed) reveal(0);
+    });
+    infoOvRef.current = new kakao.maps.CustomOverlay({
+      position: new kakao.maps.LatLng(me.lat, me.lng),
+      content: wrap,
+      xAnchor: 0.5,
+      yAnchor: 1,
+      zIndex: Z_INFO,
+      clickable: true,
+    });
+    infoOvRef.current.setMap(map);
+    if (!infoPannedRef.current) {
+      infoPannedRef.current = true;
+      reveal(400);
+    }
+  }, [me, air, weather, infoAnchor, ready]);
+
   // 보이는 범위: 내 위치가 있으면 그 중심, 없으면 강도 4 이상이 모인 곳 (측정소는 계산에서 뺀다)
   useEffect(() => {
     const kakao = kakaoRef.current;
@@ -363,5 +420,10 @@ export default function KakaoOdorMap({
     return () => clearTimeout(t);
   }, [active]);
 
-  return <div ref={mapEl} className={className} role="region" aria-label="악취 제보 지도" data-map-provider={provider} />;
+  return (
+    <div className="map-frame">
+      <div ref={mapEl} className={className} role="region" aria-label="악취 제보 지도" data-map-provider={provider} />
+      {infoAnchor === "center" ? <CenterInfoCard center={center} air={air} weather={weather} /> : null}
+    </div>
+  );
 }

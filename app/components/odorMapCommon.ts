@@ -45,6 +45,11 @@ export interface OdorMapProps {
   air?: AirStation[];
   /** 날씨(바람) 지점. 없거나 비어 있으면 그리지 않는다. 지도 맞춤에는 영향을 주지 않는다 */
   weather?: WeatherPoint[];
+  /**
+   * 대기·바람 아이콘 안내가 붙는 곳. "me"(기본)는 내 위치 점 위, "center"는 지도 왼쪽 위 카드(지도 가운데 기준).
+   * 보여 줄 내용은 air·weather prop에서 만든다 (꺼져 있으면 해당 아이콘이 빠진다).
+   */
+  infoAnchor?: "me" | "center";
 }
 
 export const photoSrc = (id: number) => `/api/photos/${id}`;
@@ -193,11 +198,19 @@ export function airBadge(st: AirStation) {
   };
 }
 
-/** 바람 화살표 오버레이 (원형 반투명 배경 + 화살표 + 풍속). 측정소 배지와 겹치지 않게 오른쪽 위로 비켜 놓는다 */
-export function weatherBadge(w: WeatherPoint) {
-  // 바람 정보가 없으면 '무풍'과 구분한다 (Codex 리뷰). 무풍 안내는 풍속을 알고 0.5m/s 미만일 때만.
+/**
+ * 바람 상태 판정 (배지·말풍선 공용). 바람 정보가 없으면 '무풍'과 구분한다 (Codex 리뷰).
+ * 무풍은 풍속을 알고 0.5m/s 미만일 때만.
+ */
+export function windState(w: Pick<WeatherPoint, "wind_speed" | "wind_dir">) {
   const missing = w.wind_speed === null || (w.wind_dir === null && !isCalm(w.wind_speed));
   const calm = !missing && isCalm(w.wind_speed);
+  return { missing, calm };
+}
+
+/** 바람 화살표 오버레이 (원형 반투명 배경 + 화살표 + 풍속). 측정소 배지와 겹치지 않게 오른쪽 위로 비켜 놓는다 */
+export function weatherBadge(w: WeatherPoint) {
+  const { missing, calm } = windState(w);
   const speed = w.wind_speed === null ? "-" : `${w.wind_speed.toFixed(1)}m/s`;
   const dot = (fill: string) =>
     `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="${fill}"/></svg>`;
@@ -309,4 +322,136 @@ const Z_TIER = 450; // 한 등급(확인 필요 / 정상)이 쓰는 z 범위. �
 export function markerZ(groupIndex: number, needsReview: boolean) {
   const i = Math.min(Math.max(groupIndex, 0), Z_TIER - 1);
   return Z_REPORT_BASE + (needsReview ? 0 : Z_TIER) + i;
+}
+
+
+// ---- 대기·바람 아이콘 안내 (내 위치 위 / 지도 가운데 카드) ----
+
+/** origin에서 가장 가까운 항목 (없으면 null) */
+export function nearestPoint<T extends { lat: number; lng: number }>(
+  origin: { lat: number; lng: number },
+  items: T[] | undefined,
+): T | null {
+  if (!items?.length) return null;
+  return items.reduce((best, p) => (distanceMeters(origin, p) < distanceMeters(origin, best) ? p : best));
+}
+
+const AIR_EMOJI: Record<number, string> = { 1: "😀", 2: "🙂", 3: "😷", 4: "🤢" };
+/** 대기 등급 -> 표정 이모지 (모르면 ❔) */
+export function airEmoji(cai: AirStation["cai"]) {
+  return cai ? AIR_EMOJI[cai] : "❔";
+}
+
+export interface InfoContent {
+  anchorLabel: string;
+  air: { label: string; color: string; emoji: string } | null;
+  wind: { kind: "missing" | "calm" | "wind"; toDeg: number; speed: string; text: string } | null;
+  /** 설명 첫 줄: "내 위치 · 대기 보통" */
+  head: string;
+  /** 작은 회색 줄: "애월 측정소 기준 · 기상청 09:00" */
+  footer: string;
+  /** 버튼 aria-label 전체 문장 */
+  aria: string;
+}
+
+/** 출처·시각 문구: 대기가 있으면 "애월 측정소 기준", 없으면 "애월 기준", 날씨가 있으면 "· 기상청 09:00" */
+export function infoFooter(st: AirStation | null, w: WeatherPoint | null) {
+  const parts: string[] = [];
+  if (st) parts.push(`${st.name} 측정소 기준`);
+  else if (w) parts.push(`${w.name} 기준`);
+  if (w) parts.push(`${w.source} ${w.at.slice(11, 16)}`);
+  return parts.join(" · ");
+}
+
+/**
+ * 말풍선·카드 내용. origin에서 가장 가까운 측정소(air)·날씨 지점(weather)을 각각 고른다.
+ * air/weather가 없거나 비면 해당 부분을 뺀다. 둘 다 없으면 null (보여 주지 않는다).
+ */
+export function buildInfoContent(
+  anchorLabel: string,
+  origin: { lat: number; lng: number },
+  air: AirStation[] | undefined,
+  weather: WeatherPoint[] | undefined,
+): InfoContent | null {
+  const st = nearestPoint(origin, air);
+  const w = nearestPoint(origin, weather);
+  if (!st && !w) return null;
+  const airInfo = st
+    ? {
+        label: st.cai ? AIR_CAI_LABELS[st.cai] : AIR_UNKNOWN_LABEL,
+        color: st.cai ? AIR_CAI_COLORS[st.cai] : AIR_UNKNOWN_COLOR,
+        emoji: airEmoji(st.cai),
+      }
+    : null;
+  let wind: InfoContent["wind"] = null;
+  let windSentence = "";
+  if (w) {
+    const { missing, calm } = windState(w);
+    if (missing) {
+      wind = { kind: "missing", toDeg: 0, speed: "-", text: "바람 정보 없음" };
+      windSentence = "바람 정보 없음";
+    } else if (calm) {
+      wind = { kind: "calm", toDeg: 0, speed: "무풍", text: "바람 거의 없음 · 냄새가 머물 수 있어요" };
+      windSentence = "바람 거의 없음, 냄새가 머물 수 있어요";
+    } else {
+      const speed = `${w.wind_speed!.toFixed(1)}m/s`;
+      const toDeg = windToDeg(w.wind_dir!);
+      wind = { kind: "wind", toDeg, speed, text: `${windFromLabel(w.wind_dir!)} ${speed} · 냄새는 ${windDirName(toDeg)}쪽으로` };
+      windSentence = `${windFromLabel(w.wind_dir!)} ${w.wind_speed!.toFixed(1)}미터, 냄새는 ${windDirName(toDeg)}쪽으로 퍼질 수 있어요`;
+    }
+  }
+  const footer = infoFooter(st, w);
+  const head = airInfo ? `${anchorLabel} · 대기 ${airInfo.label}` : anchorLabel;
+  const aria = [airInfo ? `${anchorLabel} 대기 ${airInfo.label}` : anchorLabel, windSentence, footer].filter(Boolean).join(", ");
+  return { anchorLabel, air: airInfo, wind, head, footer, aria };
+}
+
+/**
+ * 아이콘 버튼 HTML (.info-bubble). collapsed면 아이콘만, 아니면 위에 설명이 펼쳐진다.
+ * 이모지·SVG는 aria-hidden, 버튼의 aria-label이 전체 문장을 읽어 준다.
+ */
+export function infoBubbleHtml(c: InfoContent, collapsed: boolean, withTag = false) {
+  const airIcon = c.air
+    ? `<span class="info-ic"><span class="info-air" style="background:${c.air.color}" aria-hidden="true">${c.air.emoji}</span></span>`
+    : "";
+  let windIcon = "";
+  if (c.wind) {
+    const fill = c.wind.kind === "missing" ? "#94A3B8" : "#0F766E";
+    const inner =
+      c.wind.kind === "wind"
+        ? `<svg viewBox="0 0 24 24" width="26" height="26" style="transform:rotate(${Math.round(c.wind.toDeg)}deg)"><path d="M12 2 L19 21 L12 16.5 L5 21 Z" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg>`
+        : `<svg viewBox="0 0 24 24" width="26" height="26"><circle cx="12" cy="12" r="4" fill="#fff"/></svg>`;
+    windIcon =
+      `<span class="info-ic"><span class="info-wind-ic" style="background:${fill}" aria-hidden="true">${inner}</span>` +
+      `<span class="info-wind-num" aria-hidden="true">${escapeHtml(c.wind.speed)}</span></span>`;
+  }
+  const detail =
+    `<span class="info-detail" aria-hidden="true"><strong>${escapeHtml(c.head)}</strong>` +
+    (c.wind ? `<span>${escapeHtml(c.wind.text)}</span>` : "") +
+    (c.footer ? `<span class="info-foot">${escapeHtml(c.footer)}</span>` : "") +
+    `</span>`;
+  return (
+    `<button type="button" class="info-bubble" data-collapsed="${collapsed}" aria-expanded="${!collapsed}" aria-label="${escapeHtml(c.aria)}">` +
+    detail +
+    `<span class="info-icons">${withTag ? `<span class="info-tag" aria-hidden="true">${escapeHtml(c.anchorLabel)}</span>` : ""}${airIcon}${windIcon}</span>` +
+    `</button>`
+  );
+}
+
+/** 버튼 접기/펼치기. 새 접힘 상태를 돌려준다 */
+export function toggleInfoButton(btn: HTMLElement): boolean {
+  const collapsed = btn.dataset.collapsed !== "true";
+  btn.dataset.collapsed = String(collapsed);
+  btn.setAttribute("aria-expanded", String(!collapsed));
+  return collapsed;
+}
+
+/** root 안의 .info-bubble 버튼에 클릭 토글을 단다 (지도 클릭으로 번지지 않게 막는다) */
+export function bindInfoToggle(root: HTMLElement, onToggle: (collapsed: boolean) => void) {
+  const btn = root.querySelector<HTMLElement>(".info-bubble");
+  btn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onToggle(toggleInfoButton(btn));
+  });
+  return btn;
 }

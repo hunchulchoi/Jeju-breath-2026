@@ -113,6 +113,7 @@ export default function MapView({
         {weatherOn ? <WindSummary points={weather} origin={null} /> : null}
         <OdorMap
           kakaoKey={kakaoKey}
+          infoAnchor="center"
           reports={reports}
           active={tab === "map"}
           onTileFailed={onTileFailed}

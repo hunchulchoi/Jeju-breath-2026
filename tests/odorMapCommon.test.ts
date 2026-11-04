@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { markerZ, overflowPan, popupMaxSize, Z_REPORT_BASE , weatherBadge } from "@/app/components/odorMapCommon";
+import { markerZ, overflowPan, popupMaxSize, Z_REPORT_BASE , weatherBadge, nearestPoint, airEmoji, buildInfoContent, infoBubbleHtml, infoFooter, windState } from "@/app/components/odorMapCommon";
 
 const map = { left: 0, top: 0, right: 400, bottom: 300 };
 const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
@@ -75,5 +75,62 @@ describe("weatherBadge 바람 정보 없음과 무풍 구분 (Codex 리뷰)", ()
     const b = weatherBadge({ ...base, wind_speed: 6, wind_dir: 90 });
     expect(b.popup).toContain("동풍");
     expect(b.popup).toContain("서쪽으로");
+  });
+});
+
+describe("대기·바람 아이콘 안내", () => {
+  const w = { site: "716", name: "애월", lat: 33.46, lng: 126.33, at: "2026-11-04T09:00:00+09:00", temp: 18, humidity: 65, sky: "강수 없음", rain_1h: null, source: "기상청", wind_speed: 4.4, wind_dir: 90 };
+  const w2 = { ...w, site: "800", name: "한림", lat: 33.41, lng: 126.26 };
+  const st = { site: "716", name: "애월", lat: 33.46, lng: 126.33, approx: false, measured_at: "2026-11-04T09:00:00+09:00", cai: 2 as const, rep_item: null, pm10: 1, pm25: 1, o3: 0.01 };
+  const st2 = { ...st, site: "800", name: "한림", lat: 33.41, lng: 126.26 };
+  const here = { lat: 33.459, lng: 126.331 };
+
+  it("최근접 지점 선택, 비면 null", () => {
+    expect(nearestPoint(here, [w2, w])?.name).toBe("애월");
+    expect(nearestPoint(here, [])).toBeNull();
+    expect(nearestPoint(here, undefined)).toBeNull();
+  });
+  it("이모지 매핑", () => {
+    expect([1, 2, 3, 4, null].map((c) => airEmoji(c as 1 | 2 | 3 | 4 | null))).toEqual(["😀", "🙂", "😷", "🤢", "❔"]);
+  });
+  it("대기+바람: 둘 다, aria 문장과 출처·시각", () => {
+    const c = buildInfoContent("내 위치", here, [st2, st], [w2, w])!;
+    expect(c.air?.label).toBe("보통");
+    expect(c.wind?.text).toBe("동풍 4.4m/s · 냄새는 서쪽으로");
+    expect(c.head).toBe("내 위치 · 대기 보통");
+    expect(c.footer).toBe("애월 측정소 기준 · 기상청 09:00");
+    expect(c.aria).toBe("내 위치 대기 보통, 동풍 4.4미터, 냄새는 서쪽으로 퍼질 수 있어요, 애월 측정소 기준 · 기상청 09:00");
+    const h = infoBubbleHtml(c, true);
+    expect(h).toContain('data-collapsed="true"');
+    expect(h).toContain("4.4m/s");
+    expect(h).toContain("🙂");
+  });
+  it("대기만 / 바람만 / 둘 다 없으면 null", () => {
+    const a = buildInfoContent("내 위치", here, [st], undefined)!;
+    expect(a.wind).toBeNull();
+    expect(a.footer).toBe("애월 측정소 기준");
+    const b = buildInfoContent("지도 가운데", here, undefined, [w])!;
+    expect(b.air).toBeNull();
+    expect(b.head).toBe("지도 가운데");
+    expect(b.footer).toBe("애월 기준 · 기상청 09:00");
+    expect(buildInfoContent("내 위치", here, undefined, undefined)).toBeNull();
+    expect(buildInfoContent("내 위치", here, [], [])).toBeNull();
+  });
+  it("무풍과 바람 정보 없음", () => {
+    const calm = buildInfoContent("내 위치", here, undefined, [{ ...w, wind_speed: 0.2, wind_dir: null }])!;
+    expect(calm.wind?.kind).toBe("calm");
+    expect(calm.wind?.speed).toBe("무풍");
+    expect(calm.wind?.text).toContain("머물 수 있어요");
+    const miss = buildInfoContent("내 위치", here, undefined, [{ ...w, wind_speed: null }])!;
+    expect(miss.wind?.kind).toBe("missing");
+    expect(miss.wind?.speed).toBe("-");
+    expect(windState({ wind_speed: 8, wind_dir: null }).missing).toBe(true);
+  });
+  it("대기 등급 모름은 정보 없음", () => {
+    expect(buildInfoContent("내 위치", here, [{ ...st, cai: null }], undefined)!.air?.label).toBe("정보 없음");
+  });
+  it("출처 문구", () => {
+    expect(infoFooter(null, null)).toBe("");
+    expect(infoFooter(st, { ...w, source: "Open-Meteo" })).toBe("애월 측정소 기준 · Open-Meteo 09:00");
   });
 });
