@@ -1,28 +1,9 @@
-import Link from "next/link";
-import { TopBar } from "./components/TopBar";
+import { connection } from "next/server";
+import { seoulDay } from "@/lib/time";
+import HomeView from "./HomeView";
 
-export default function Home() {
-  return (
-    <main className="container">
-      <TopBar />
-      <h1>악취가 나면 알려주세요</h1>
-      <p className="muted">
-        위치와 냄새 세기만 고르면 돼요. 제보는 날짜별 지도에 쌓여 어디서 자주 냄새가 나는지 보여 줘요.
-      </p>
-      <div className="stack" style={{ marginTop: 24 }}>
-        <Link href="/report" className="btn">
-          제보하기
-        </Link>
-        <Link href="/map" className="btn secondary">
-          오늘 지도 보기
-        </Link>
-        <Link href="/stats" className="btn secondary">
-          통계 보기
-        </Link>
-      </div>
-      <p className="muted small" style={{ marginTop: 24 }}>
-        이름이나 연락처는 받지 않아요. 지도에는 약 200m 단위의 대략적인 위치만 보여요.
-      </p>
-    </main>
-  );
+// 서버에서는 DB를 조회하지 않는다 (healthcheck가 /를 친다). 지도 데이터는 클라이언트가 /api로 불러온다.
+export default async function Home() {
+  await connection();
+  return <HomeView today={seoulDay(new Date())} kakaoKey={process.env.KAKAO_JS_KEY ?? ""} />;
 }

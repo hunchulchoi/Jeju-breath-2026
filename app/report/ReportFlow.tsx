@@ -7,6 +7,8 @@ import { WeatherSource, WeatherToggle, WindSummary, useShowWeather, useWeather }
 import { AirSource, AirToggle, useAirStations, useShowAir } from "../components/AirToggle";
 import { TopBar } from "../components/TopBar";
 import ConsentStep from "./ConsentStep";
+import { hasConsent, saveConsent } from "../components/useConsent";
+import { useMyPosition } from "../components/useMyPosition";
 import { distanceMeters, RULES } from "@/lib/rules";
 import { formatTime } from "@/lib/time";
 import { CONSENT_VERSION, INTENSITY_COLORS, INTENSITY_LABELS, INTENSITY_TEXT, type OdorType, type PublicReport, type Summary, ODOR_DISPLAY } from "@/lib/types";
@@ -24,7 +26,6 @@ const PHOTO_MESSAGES: Record<string, string> = {
 };
 const SAFETY_TEXT =
   "이 정보는 주민 제보 기준이며 원인이나 책임을 판단하지 않아요. 건강 이상이 있으면 119 또는 의료기관에 문의하세요.";
-const CONSENT_KEY = "jbb_consent";
 
 // 화면에 보이는 이름과 서버에 보내는 값
 // 아이콘은 이모지 (그림 파일 없이 휴대폰에서 바로 보임). 화면 읽기 프로그램은 글자만 읽는다.
@@ -37,13 +38,7 @@ const ODOR_CHOICES: { icon: string; value: OdorType; hint?: string }[] = [
 ];
 
 type Step = "init" | "consent" | "main" | "saving" | "done";
-type Loc = "loading" | "ok" | "error";
 
-interface Coords {
-  lat: number;
-  lng: number;
-  accuracy: number;
-}
 
 interface Saved {
   id: number;
@@ -94,34 +89,6 @@ async function shrinkPhoto(file: File): Promise<Blob> {
   }
 }
 
-function getPosition(): Promise<Coords> {
-  return new Promise((resolve, reject) => {
-    if (!("geolocation" in navigator)) return reject(new Error("unsupported"));
-    navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
-      (e) => reject(e),
-      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
-    );
-  });
-}
-
-
-function hasConsent(): boolean {
-  try {
-    return localStorage.getItem(CONSENT_KEY) === CONSENT_VERSION;
-  } catch {
-    return false;
-  }
-}
-
-function saveConsent() {
-  try {
-    localStorage.setItem(CONSENT_KEY, CONSENT_VERSION);
-  } catch {
-    // 저장하지 못해도 이번 제보는 계속할 수 있다
-  }
-}
-
 // 강도 5 안내: tel: 링크라 자동으로 걸리지 않고 사용자가 누를 때 전화 앱이 열린다
 function Emergency119({ text, note }: { text: string; note?: string }) {
   return (
@@ -139,8 +106,6 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
   const [step, setStep] = useState<Step>("init");
   const [reviewing, setReviewing] = useState(false);
   const [useDemoCoords, setUseDemoCoords] = useState(false);
-  const [coords, setCoords] = useState<Coords | null>(null);
-  const [loc, setLoc] = useState<Loc>("loading");
   const [locTry, setLocTry] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [reports, setReports] = useState<PublicReport[] | null>(null);
@@ -217,25 +182,11 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
   }, [step, today]);
 
   // 제보 화면에 들어오면 바로 위치를 확인한다 (테스트 좌표 토글·다시 시도로 다시 실행)
-  useEffect(() => {
-    if (step !== "main") return;
-    let cancelled = false;
-    setLoc("loading");
-    setCoords(null);
-    const p = useDemoCoords ? Promise.resolve(DEMO_COORDS) : getPosition();
-    p.then((position) => {
-      if (cancelled) return;
-      setCoords(position);
-      setLoc("ok");
-    }).catch(() => {
-      if (cancelled) return;
-      postLocationFailure();
-      setLoc("error");
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [step, useDemoCoords, locTry]);
+  const { coords, loc } = useMyPosition(step === "main" || step === "saving", {
+    demo: useDemoCoords ? DEMO_COORDS : null,
+    retry: locTry,
+    onFail: postLocationFailure,
+  });
 
   async function pickPhoto(file: File | undefined) {
     setPhotoError("");
@@ -320,6 +271,8 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
             ? (body.error ?? "위치를 확인하지 못해 저장하지 않았어요.")
             : "저장 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.",
         );
+        // 위치가 거절되면 같은 좌표를 다시 보내지 않도록 위치를 새로 받는다 (Codex 리뷰)
+        if (res.status === 422) setLocTry((n) => n + 1);
         setStep("main");
         return;
       }

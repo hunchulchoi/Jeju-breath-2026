@@ -9,8 +9,8 @@ const SAFETY_NOTE =
 /** 안내 + 동의 화면. 둘 다 체크해야 계속할 수 있다. reviewing이면 이미 동의한 사람이 내용을 다시 보는 중이다. */
 const ConsentStep = forwardRef<
   HTMLHeadingElement,
-  { reviewing?: boolean; onAgree: () => void }
->(function ConsentStep({ reviewing = false, onAgree }, headingRef) {
+  { reviewing?: boolean; onAgree: () => void; onDecline?: () => void }
+>(function ConsentStep({ reviewing = false, onAgree, onDecline }, headingRef) {
   const [privacy, setPrivacy] = useState(reviewing);
   const [location, setLocation] = useState(reviewing);
   const all = privacy && location;
@@ -92,9 +92,15 @@ const ConsentStep = forwardRef<
           두 가지에 모두 체크하면 계속할 수 있어요.
         </p>
       ) : null}
-      <Link href="/map" className="btn secondary">
-        동의하지 않고 지도만 보기
-      </Link>
+      {onDecline ? (
+        <button type="button" className="btn secondary" onClick={onDecline}>
+          동의하지 않고 지도만 보기
+        </button>
+      ) : (
+        <Link href="/map" className="btn secondary">
+          동의하지 않고 지도만 보기
+        </Link>
+      )}
     </section>
   );
 });

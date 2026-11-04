@@ -5,9 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 import OdorMap, { Legend, colorOf, photoSrc } from "../components/OdorMap";
 import { AirSource, AirToggle, useAirStations, useShowAir } from "../components/AirToggle";
 import { WeatherSource, WeatherToggle, WindSummary, useShowWeather, useWeather } from "../components/WeatherToggle";
+import { useDayData } from "../components/useDayData";
 import { TopBar } from "../components/TopBar";
 import { formatTime } from "@/lib/time";
-import { INTENSITY_LABELS, type PublicReport, type Summary, INTENSITY_TEXT, ODOR_DISPLAY } from "@/lib/types";
+import { INTENSITY_LABELS, type PublicReport, INTENSITY_TEXT, ODOR_DISPLAY } from "@/lib/types";
 
 type Tab = "map" | "list";
 
@@ -29,9 +30,7 @@ export default function MapView({
 }) {
   const [day, setDay] = useState(initialDay);
   const [tab, setTab] = useState<Tab>("map");
-  const [reports, setReports] = useState<PublicReport[] | null>(null);
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const { reports, summary, loadError } = useDayData(day);
   const [tileFailed, setTileFailed] = useState(false);
   const [showAir, setShowAir] = useShowAir();
   const { air, failed: airFailed } = useAirStations(day, showAir);
@@ -46,26 +45,6 @@ export default function MapView({
       fetch("/api/events", { method: "POST", body: JSON.stringify({ name: "map_viewed" }) }).catch(() => {});
     }
   }, [fromReport]);
-
-  // 날짜별 제보·요약 불러오기
-  useEffect(() => {
-    let cancelled = false;
-    setReports(null);
-    setLoadError(false);
-    Promise.all([
-      fetch(`/api/reports?date=${day}`).then((r) => (r.ok ? r.json() : Promise.reject())),
-      fetch(`/api/summary?date=${day}`).then((r) => (r.ok ? r.json() : Promise.reject())),
-    ])
-      .then(([list, sum]: [{ reports: PublicReport[] }, Summary]) => {
-        if (cancelled) return;
-        setReports(list.reports);
-        setSummary(sum);
-      })
-      .catch(() => !cancelled && setLoadError(true));
-    return () => {
-      cancelled = true;
-    };
-  }, [day]);
 
   // 타일이 하나도 안 뜨면 목록으로 자동 전환
   const onTileFailed = useCallback(() => {
