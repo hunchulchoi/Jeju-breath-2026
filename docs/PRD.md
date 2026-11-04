@@ -184,6 +184,13 @@ flowchart TD
 - 외부 API가 실패해도 지도와 제보는 정상 동작하고, "대기 정보를 불러오지 못했어요"만 표시한다.
 - 가이드에는 있지만 실제 응답에 없는 풍향·풍속·기온·습도는 표시하지 않는다. 바람 정보는 별도 출처(기상청)가 필요하다.
 
+### FR-10 통계 페이지 (P1)
+
+- `/stats`: 기간(오늘·최근 7일·최근 30일)을 고르면 제보 건수·강도 4 이상·같은 곳 다시 제보(합쳐짐)·위치 실패 타일과 차트를 보여 준다. 숫자만 집계하며 위치·제보자 정보는 없다.
+- 차트: 날짜별(강도별로 쌓은 막대, 오늘 기간은 숨김), 시간대별(서울 시각), 강도별, 냄새 종류, 참여 지표(시작→저장→지도 열람, 완료율·위치 허용률·지도 열람률). 각 차트는 hover·focus 툴팁과 `표로 보기` 표를 갖는다.
+- `needs_review` 제보는 모든 집계에서 빼고 개수만 따로 안내한다. 시연 데이터가 있으면 "시연 모드: 가상 데이터" 배지.
+- 진입: 홈 [통계 보기], `/map` 아래 링크.
+
 ### FR-8 시드 데이터 (P0)
 
 - 가상 제보 20건: 같은 날 한 마을(애월읍 일대)에 아침(06\~09시)·저녁(19\~23시) 몰린 급증 상황 포함, 냄새 종류는 양돈 위주
@@ -257,6 +264,7 @@ CREATE TABLE location_failures (
 | GET | `/api/photos/{id}` | 공개 가능한 제보 사진 (확인 필요 제보는 404) |
 | POST | `/api/location-failures` | 본문 없음. 오늘 날짜 카운트 +1 |
 | GET | `/api/reports?date=YYYY-MM-DD` | 해당 날짜 제보 목록(격자 좌표만, `user_hash` 제외, `photo_ids` 포함) |
+| GET | `/api/stats?days=1\|7\|30` | 통계 `{ range, totals, by_day, by_hour, by_intensity, by_odor, funnel }`. 기본 7일, 그 밖의 값은 400. `needs_review` 제보 제외 |
 | GET | `/api/summary?date=YYYY-MM-DD` | `{ total, high_intensity, location_failures }` |
 | POST | `/api/kakao/skill` | (P1) 카카오 오픈빌더 스킬. `x-skill-secret` 헤더 필수(없거나 틀리면 401, 서버에 `KAKAO_SKILL_SECRET`이 없으면 503). 발화는 읽지도 저장하지도 않고, 어떤 말이 와도 `textCard`(웹링크 버튼 2개)로 회신. DB를 쓰지 않음. 9.2 참고 |
 

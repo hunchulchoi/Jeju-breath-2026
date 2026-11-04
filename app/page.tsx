@@ -16,6 +16,9 @@ export default function Home() {
         <Link href="/map" className="btn secondary">
           오늘 지도 보기
         </Link>
+        <Link href="/stats" className="btn secondary">
+          통계 보기
+        </Link>
       </div>
       <p className="muted small" style={{ marginTop: 24 }}>
         이름이나 연락처는 받지 않아요. 지도에는 약 200m 단위의 대략적인 위치만 보여요.

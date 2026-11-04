@@ -31,6 +31,7 @@ npm run dev                  # http://localhost:3000
 | --- | --- |
 | `app/report` | 안내·동의 → 지도 화면에서 위치 확인 → 강도·종류·사진 선택 → 접수 |
 | `app/map` | 날짜별 지도·목록 (카카오맵 기본, 실패하거나 `KAKAO_JS_KEY`가 없으면 Leaflet + OpenStreetMap), 같은 200m 칸은 마커 하나로 묶음 |
+| `app/stats` | 통계 페이지: 기간별 제보 건수·날짜/시간대/강도/냄새 종류 차트·참여 지표 (숫자만 집계) |
 | `app/api/*` | PRD 8장 API + 지표용 `/api/events`, `/api/metrics` |
 | `app/api/kakao` | 카카오 오픈빌더 스킬 (`KAKAO_SKILL_SECRET` 필요). 어떤 말이 와도 제보·지도 링크 카드로 회신 (발화는 읽지 않음) |
 | `lib/kakao.ts` | 스킬 비밀 헤더 검사·응답 형식 |

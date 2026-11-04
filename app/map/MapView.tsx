@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import OdorMap, { Legend, colorOf, photoSrc } from "../components/OdorMap";
 import { AirSource, AirToggle, useAirStations, useShowAir } from "../components/AirToggle";
@@ -116,6 +117,9 @@ export default function MapView({
           : "불러오는 중이에요"}
       </p>
       <p className="muted small">지도 위치는 약 200m 단위의 대략적인 위치예요. 원인이나 책임을 판단하지 않아요.</p>
+      <p>
+        <Link href="/stats">통계 보기</Link>
+      </p>
     </main>
   );
 }
