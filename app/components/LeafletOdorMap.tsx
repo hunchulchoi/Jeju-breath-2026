@@ -11,16 +11,15 @@ import {
   buildInfoContent,
   infoBubbleHtml,
   overflowPan,
+  applySelectedClass,
   findHighlightGroup,
   focusPoints,
   groupReports,
   hasHighlight,
   markerHtml,
-  pickMeToo,
-  reportPopupHtml,
-  useLatestRefs,
   weatherBadge,
   type OdorMapProps,
+  type SelectProps,
 } from "./odorMapCommon";
 import { CenterInfoCard } from "./MapInfo";
 
@@ -32,13 +31,15 @@ export default function LeafletOdorMap({
   me = null,
   active = true,
   className = "map",
-  meToo,
   air,
   weather,
   infoAnchor = "me",
   highlightId,
+  onSelect,
+  selectedKey,
+  belowMap,
   onTileFailed,
-}: OdorMapProps & { onTileFailed?: () => void }) {
+}: OdorMapProps & SelectProps & { onTileFailed?: () => void }) {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const layerRef = useRef<LayerGroup | null>(null);
@@ -56,13 +57,15 @@ export default function LeafletOdorMap({
     tileFailedRef.current = onTileFailed;
   }, [onTileFailed]);
 
-  const { meTooRef, reportsRef } = useLatestRefs(reports, meToo);
-  // 제출이 시작되면 열려 있는 팝업(버튼)을 닫는다
-  const meTooDisabled = !!meToo?.disabled;
+  const onSelectRef = useRef(onSelect);
   useEffect(() => {
-    if (meTooDisabled) mapRef.current?.closePopup();
-  }, [meTooDisabled]);
-
+    onSelectRef.current = onSelect;
+  });
+  // 부모가 다시 그려질 때마다 내용이 같은 새 배열·객체가 올 수 있다. 내용이 바뀐 경우에만 다시 그리고 지도를 맞춘다
+  const reportsKey = reports
+    ? reports.map((r) => `${r.id}:${r.intensity}:${r.merged_count}:${r.needs_review ? 1 : 0}:${r.photo_ids.length}`).join("|")
+    : "loading"; // 불러오는 중(null)과 빈 날짜([])를 구분해야 날짜를 바꿀 때 옛 마커가 지워진다
+  const meKey = me ? `${me.lat.toFixed(5)},${me.lng.toFixed(5)}` : "";
   // 지도 만들기 (브라우저에서만)
   useEffect(() => {
     let disposed = false;
@@ -90,19 +93,8 @@ export default function LeafletOdorMap({
         if (!anyTileLoaded) tileFailedRef.current?.();
       });
       tiles.addTo(map);
-      // 팝업이 열릴 때마다 새로 만들어진 버튼에 직접 클릭 리스너를 붙인다
-      // (팝업은 클릭 전파를 막아서 지도 컨테이너 위임은 쓸 수 없다. 팝업을 닫으면 요소째 버려진다)
-      const onMeTooClick = (ev: Event) => {
-        const id = Number((ev.currentTarget as HTMLElement).dataset.meToo);
-        if (!pickMeToo(id, meTooRef.current, reportsRef.current)) return;
-        map.closePopup();
-      };
-      map.on("popupopen", (e) => {
-        e.popup
-          .getElement()
-          ?.querySelectorAll<HTMLButtonElement>("button[data-me-too]")
-          .forEach((b) => b.addEventListener("click", onMeTooClick));
-      });
+      // 빈 곳을 누르면 선택 해제 (마커 클릭은 지도 클릭으로 번지지 않는다)
+      map.on("click", () => onSelectRef.current?.(null));
       // 측정소는 제보 마커(markerPane 600)보다 아래 층에 그린다
       map.createPane("air").style.zIndex = "550";
       airLayerRef.current = L.layerGroup().addTo(map);
@@ -118,7 +110,7 @@ export default function LeafletOdorMap({
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [meTooRef, reportsRef]);
+  }, []);
 
   // 마커 그리기
   useEffect(() => {
@@ -140,10 +132,10 @@ export default function LeafletOdorMap({
         keyboard: true,
         zIndexOffset: hasHighlight(g, highlightId) ? 1000 : 0,
       })
-        .bindPopup(() => reportPopupHtml(g, meTooRef.current))
+        .on("click", () => onSelectRef.current?.({ kind: "reports", group: g }))
         .addTo(layer);
     }
-  }, [reports, ready, meTooRef, highlightId]);
+  }, [reportsKey, ready, highlightId]);
 
   // 대기질 측정소
   useEffect(() => {
@@ -160,7 +152,7 @@ export default function LeafletOdorMap({
         iconAnchor: [b.width / 2, b.height / 2],
       });
       L.marker([st.lat, st.lng], { icon, pane: "air", title: b.title, alt: b.title, keyboard: true })
-        .bindPopup(() => b.popup)
+        .on("click", () => onSelectRef.current?.({ kind: "air", station: st }))
         .addTo(layer);
     }
   }, [air, ready]);
@@ -178,10 +170,9 @@ export default function LeafletOdorMap({
         html: b.html,
         iconSize: [b.width, b.height],
         iconAnchor: [b.width / 2, b.height / 2],
-        popupAnchor: [62, -34 - b.popupLift],
       });
       L.marker([w.lat, w.lng], { icon, pane: "air", title: b.title, alt: b.title, keyboard: true })
-        .bindPopup(() => b.popup)
+        .on("click", () => onSelectRef.current?.({ kind: "wind", point: w }))
         .addTo(layer);
     }
   }, [weather, ready]);
@@ -201,7 +192,7 @@ export default function LeafletOdorMap({
     L.circleMarker(at, { radius: 9, color: "#fff", weight: 3, fillColor: "#2563eb", fillOpacity: 1, interactive: false }).addTo(layer);
   }, [me, ready]);
 
-  // 내 위치 위 대기·바람 아이콘 (마커 pane 안에서 제보 마커보다 위, 팝업 pane보다 아래)
+  // 내 위치 위 대기·바람 아이콘 (마커 pane 안에서 제보 마커보다 위)
   useEffect(() => {
     const L = leafletRef.current;
     const layer = infoLayerRef.current;
@@ -257,7 +248,12 @@ export default function LeafletOdorMap({
         maxZoom: 15,
       });
     }
-  }, [reports, me, ready, highlightId]);
+  }, [reportsKey, meKey, ready, highlightId]);
+
+  // 선택된 마커에 링 (마커를 다시 만들지 않고 클래스만 바꾼다)
+  useEffect(() => {
+    applySelectedClass(mapEl.current, selectedKey);
+  }, [selectedKey, reportsKey, air, weather, ready, highlightId]);
 
   // 숨겨 둔 탭이 다시 보이면 크기 다시 계산
   useEffect(() => {
@@ -268,6 +264,7 @@ export default function LeafletOdorMap({
     <div className="map-frame">
       <div ref={mapEl} className={className} role="region" aria-label="악취 제보 지도" data-map-provider="leaflet" />
       {infoAnchor === "center" ? <CenterInfoCard center={center} air={air} weather={weather} /> : null}
+      {belowMap}
     </div>
   );
 }

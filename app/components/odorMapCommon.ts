@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { distanceMeters, RULES } from "@/lib/rules";
 import { formatTime } from "@/lib/time";
 import {
@@ -17,7 +17,7 @@ import {
 } from "@/lib/types";
 import { isCalm, sourceLabel, windDirName, windFromLabel, windToDeg } from "@/lib/weather";
 
-/** Leaflet·카카오 두 지도 구현이 함께 쓰는 순수 로직 (묶음·색·정렬·팝업 문구) */
+/** Leaflet·카카오 두 지도 구현이 함께 쓰는 순수 로직 (묶음·색·정렬·선택 카드 내용) */
 
 export const AEWOL_CENTER = { lat: 33.44, lng: 126.33 };
 
@@ -54,6 +54,65 @@ export interface OdorMapProps {
   highlightId?: number;
 }
 
+/** 지도에서 고른 것 (마커·측정소 배지·바람 화살표). 설명은 지도 아래 카드에 나온다 */
+export type MapSelection =
+  | { kind: "reports"; group: MarkerGroup }
+  | { kind: "air"; station: AirStation }
+  | { kind: "wind"; point: WeatherPoint };
+
+/** 구현(카카오·Leaflet)이 함께 받는 선택 관련 props */
+export interface SelectProps {
+  /** 마커 등을 누르면 부른다. null은 빈 곳 클릭(선택 해제) */
+  onSelect?: (s: MapSelection | null) => void;
+  /** 지금 선택된 항목의 키 (selectionKey). 해당 마커에 링을 그린다 */
+  selectedKey?: string | null;
+  /** 지도 컨테이너 바로 아래(같은 map-frame 안)에 그릴 것 */
+  belowMap?: ReactNode;
+}
+
+export function selectionKey(s: MapSelection): string {
+  if (s.kind === "reports") return groupKey(s.group);
+  if (s.kind === "air") return `a:${s.station.site}`;
+  return `w:${s.point.site}`;
+}
+
+export function groupKey(g: MarkerGroup) {
+  return `r:${g.lat},${g.lng},${g.top.needs_review ? 1 : 0}`;
+}
+
+export const airKey = (st: AirStation) => `a:${st.site}`;
+export const windKey = (w: WeatherPoint) => `w:${w.site}`;
+
+/** 최신 reports·air·weather로 선택을 다시 찾는다. 사라졌으면 null (카드를 닫는다) */
+export function refreshSelection(
+  sel: MapSelection | null,
+  reports: PublicReport[] | null | undefined,
+  air: AirStation[] | undefined,
+  weather: WeatherPoint[] | undefined,
+): MapSelection | null {
+  if (!sel) return null;
+  if (sel.kind === "reports") {
+    const key = groupKey(sel.group);
+    const group = groupReports(reports ?? []).find((g) => groupKey(g) === key);
+    return group ? { kind: "reports", group } : null;
+  }
+  if (sel.kind === "air") {
+    const station = air?.find((a) => a.site === sel.station.site);
+    return station ? { kind: "air", station } : null;
+  }
+  const point = weather?.find((w) => w.site === sel.point.site);
+  return point ? { kind: "wind", point } : null;
+}
+
+export const SELECTED_CLASS = "odor-selected";
+
+/** root 안에서 data-sel 키가 selectedKey인 요소에만 선택 링 클래스를 단다 */
+export function applySelectedClass(root: ParentNode | null, selectedKey: string | null | undefined) {
+  root?.querySelectorAll<HTMLElement>("[data-sel]").forEach((el) => {
+    el.classList.toggle(SELECTED_CLASS, el.dataset.sel === selectedKey);
+  });
+}
+
 export const photoSrc = (id: number) => `/api/photos/${id}`;
 
 export function colorOf(r: PublicReport) {
@@ -76,18 +135,6 @@ function describe(r: PublicReport) {
 
 function airValue(v: number | null, unit: string) {
   return v === null ? "-" : `${v}${unit}`;
-}
-
-/** 팝업 안 사진 (숫자 id만 넣으므로 그대로 HTML에 써도 안전) */
-function popupPhotos(r: PublicReport) {
-  if (!r.photo_ids.length) return "";
-  const imgs = r.photo_ids
-    .map(
-      (id) =>
-        `<a href="${photoSrc(id)}" target="_blank" rel="noopener"><img src="${photoSrc(id)}" alt="제보 사진" loading="lazy"></a>`,
-    )
-    .join("");
-  return `<div class="popup-photos">${imgs}</div>`;
 }
 
 /** 마커 한 개가 되는 제보 묶음 */
@@ -148,38 +195,42 @@ export function markerHtml(g: MarkerGroup, highlightId?: number) {
   const fg = top.needs_review ? "#1F2A2E" : INTENSITY_TEXT[top.intensity];
   const mine = hasHighlight(g, highlightId);
   return (
-    `<div class="odor-marker${mine ? " odor-mine" : ""}" style="width:${size}px;height:${size}px;background:${colorOf(top)};color:${fg}">` +
+    `<div class="odor-marker${mine ? " odor-mine" : ""}" data-sel="${groupKey(g)}" style="width:${size}px;height:${size}px;background:${colorOf(top)};color:${fg}">` +
     `${top.intensity}${count > 1 ? `<span class="odor-count">${count}</span>` : ""}` +
     `${mine ? `<span class="odor-mine-label">${HIGHLIGHT_LABEL}</span>` : ""}</div>`
   );
 }
 
-/** 팝업을 열 때마다 최신 위치·상태로 조건을 다시 계산한다 (조건이 안 맞으면 버튼 자체가 없다) */
-function meTooHtml(top: PublicReport, cfg: MeToo | undefined) {
-  if (!cfg || cfg.disabled || !cfg.origin || top.needs_review) return "";
-  if (distanceMeters(cfg.origin, { lat: top.grid_lat, lng: top.grid_lng }) > RULES.nearbyMeters) return "";
+/** [저도 악취를 느꼈어요] 버튼을 보일 조건을 지금 값으로 확인한다 (맞지 않으면 null) */
+export function meTooOffer(top: PublicReport, cfg: MeToo | undefined) {
+  if (!cfg || cfg.disabled || !cfg.origin || top.needs_review) return null;
+  if (distanceMeters(cfg.origin, { lat: top.grid_lat, lng: top.grid_lng }) > RULES.nearbyMeters) return null;
   const n = Number(top.intensity);
-  return (
-    `<div class="me-too">` +
-    `<button type="button" class="me-too-btn" data-me-too="${Number(top.id)}">저도 악취를 느꼈어요</button>` +
-    `<div class="me-too-help">내 위치에서 같은 세기(${n} · ${INTENSITY_LABELS[n]?.short ?? ""})로 제보돼요</div></div>`
-  );
+  return { id: Number(top.id), intensity: n, label: INTENSITY_LABELS[n]?.short ?? "" };
 }
 
-/** 제보 묶음 팝업 HTML */
-export function reportPopupHtml(g: MarkerGroup, cfg: MeToo | undefined) {
+export interface ReportCardData {
+  title: string;
+  needsReview: boolean;
+  lines: { id: number; text: string; photoIds: number[] }[];
+  meToo: { id: number; intensity: number; label: string } | null;
+}
+
+/** 제보 묶음 카드 내용 (화면에서 React로 그린다) */
+export function reportCardData(g: MarkerGroup, cfg: MeToo | undefined): ReportCardData {
   const lines = [...g.reports]
     .sort((a, b) => a.reported_at.localeCompare(b.reported_at))
-    .map(
-      (r) =>
-        escapeHtml(describe(r)) + (r.merged_count > 1 ? ` (${r.merged_count}번 제보)` : "") + popupPhotos(r),
-    );
-  return (
-    `<strong>이 근처 제보 ${g.count}건 · 최고 강도 ${g.top.intensity}</strong>` +
-    (g.top.needs_review ? "<br><em>확인 필요 (요약에서 제외)</em>" : "") +
-    `<br>${lines.join("<br>")}` +
-    meTooHtml(g.top, cfg)
-  );
+    .map((r) => ({
+      id: r.id,
+      text: describe(r) + (r.merged_count > 1 ? ` (${r.merged_count}번 제보)` : ""),
+      photoIds: r.photo_ids,
+    }));
+  return {
+    title: `이 근처 제보 ${g.count}건 · 최고 강도 ${g.top.intensity}`,
+    needsReview: g.top.needs_review,
+    lines,
+    meToo: meTooOffer(g.top, cfg),
+  };
 }
 
 /** [저도 악취를 느꼈어요] 클릭 처리: 현재 조건을 다시 확인하고 맞으면 onPick을 부른다. 처리했으면 true */
@@ -202,15 +253,32 @@ export function airBadge(st: AirStation) {
     width,
     height: 26,
     title,
-    html: `<div class="air-badge" style="background:${color}">${escapeHtml(label)}</div>`,
-    popup:
-      `<strong>${escapeHtml(st.name)} 측정소${st.approx ? " (대략 위치)" : ""}</strong><br>` +
-      `${Number(st.measured_at.slice(11, 13))}시 측정<br>` +
-      `통합대기 등급: ${escapeHtml(label)}<br>` +
-      `PM10 ${airValue(st.pm10, "㎍/㎥")}<br>` +
-      `PM2.5 ${airValue(st.pm25, "㎍/㎥")}<br>` +
-      `오존 ${airValue(st.o3, "ppm")}<br>` +
-      `<span class="muted small">출처: 제주특별자치도 보건환경연구원</span>`,
+    html: `<div class="air-badge" data-sel="${airKey(st)}" style="background:${color}">${escapeHtml(label)}</div>`,
+  };
+}
+
+export interface AirCardData {
+  title: string;
+  measured: string;
+  grade: string;
+  gradeColor: string;
+  rows: { name: string; value: string }[];
+  source: string;
+}
+
+/** 측정소 카드 내용 */
+export function airCardData(st: AirStation): AirCardData {
+  return {
+    title: `${st.name} 측정소${st.approx ? " (대략 위치)" : ""}`,
+    measured: `${Number(st.measured_at.slice(11, 13))}시 측정`,
+    grade: st.cai ? AIR_CAI_LABELS[st.cai] : AIR_UNKNOWN_LABEL,
+    gradeColor: st.cai ? AIR_CAI_COLORS[st.cai] : AIR_UNKNOWN_COLOR,
+    rows: [
+      { name: "PM10", value: airValue(st.pm10, "㎍/㎥") },
+      { name: "PM2.5", value: airValue(st.pm25, "㎍/㎥") },
+      { name: "오존", value: airValue(st.o3, "ppm") },
+    ],
+    source: "출처: 제주특별자치도 보건환경연구원",
   };
 }
 
@@ -241,33 +309,42 @@ export function weatherBadge(w: WeatherPoint) {
     : calm
       ? `${w.name} 바람 거의 없음`
       : `${w.name} ${windFromLabel(w.wind_dir!)} ${speed}`;
+  return {
+    width: 52,
+    height: 60,
+    title,
+    html:
+      `<div class="wind-badge" data-sel="${windKey(w)}"><div class="wind-disc">${arrow}</div>` +
+      `<div class="wind-speed">${missing ? "정보 없음" : calm ? "무풍" : escapeHtml(speed)}</div></div>`,
+  };
+}
+
+export interface WindCardData {
+  title: string;
+  lines: string[];
+  source: string;
+}
+
+/** 날씨(바람) 카드 내용 */
+export function windCardData(w: WeatherPoint): WindCardData {
+  const { missing, calm } = windState(w);
+  const speed = w.wind_speed === null ? "-" : `${w.wind_speed.toFixed(1)}m/s`;
   const lines: string[] = [];
   if (missing) {
     lines.push("지금은 바람 정보를 받지 못했어요");
   } else if (calm) {
     lines.push("바람이 거의 없어 냄새가 머물 수 있어요");
   } else {
-    lines.push(
-      `${windFromLabel(w.wind_dir!)} ${speed} — 냄새는 ${windDirName(windToDeg(w.wind_dir!))}쪽으로 퍼질 수 있어요`,
-    );
+    lines.push(`${windFromLabel(w.wind_dir!)} ${speed} — 냄새는 ${windDirName(windToDeg(w.wind_dir!))}쪽으로 퍼질 수 있어요`);
   }
   if (w.temp !== null) lines.push(`기온 ${w.temp.toFixed(1)}℃`);
   if (w.humidity !== null) lines.push(`습도 ${Math.round(w.humidity)}%`);
   lines.push(`하늘 상태: ${w.sky}`);
   if (w.rain_1h !== null && w.rain_1h > 0) lines.push(`1시간 강수 ${w.rain_1h}mm`);
   return {
-    width: 52,
-    height: 60,
-    /** 팝업을 마커 위로 띄울 거리(px, 마커 중심 기준) */
-    popupLift: 38,
-    title,
-    html:
-      `<div class="wind-badge"><div class="wind-disc">${arrow}</div>` +
-      `<div class="wind-speed">${missing ? "정보 없음" : calm ? "무풍" : escapeHtml(speed)}</div></div>`,
-    popup:
-      `<strong>${escapeHtml(w.name)} 날씨</strong><br>` +
-      lines.map(escapeHtml).join("<br>") +
-      `<br><span class="muted small">${escapeHtml(sourceLabel(w.source))} · ${escapeHtml(w.at.slice(11, 16))} 기준</span>`,
+    title: `${w.name} 날씨`,
+    lines,
+    source: `${sourceLabel(w.source)} · ${w.at.slice(11, 16)} 기준`,
   };
 }
 
@@ -283,7 +360,7 @@ export function accuracyRadius(me: MyPosition) {
   return me.accuracy > 0 ? Math.min(me.accuracy, 500) : 0;
 }
 
-/** 팝업 버튼이 항상 최신 값을 읽도록 ref에 둔다 */
+/** 카드 버튼이 항상 최신 값을 읽도록 ref에 둔다 */
 export function useLatestRefs(reports: PublicReport[] | null, meToo: MeToo | undefined) {
   const meTooRef = useRef(meToo);
   const reportsRef = useRef(reports);
@@ -302,7 +379,7 @@ export interface Box {
 }
 
 /**
- * 팝업이 지도 영역(여백 margin 안쪽)을 넘치는 만큼, 지도 중심을 옮길 픽셀 {dx, dy}.
+ * 요소가 지도 영역(여백 margin 안쪽)을 넘치는 만큼, 지도 중심을 옮길 픽셀 {dx, dy}.
  * 카카오 map.panBy(dx, dy)에 그대로 넘긴다 (지도 중심이 +dx면 오른쪽, +dy면 아래로 간다).
  * 팝업이 지도보다 크면 왼쪽·위쪽 가장자리(닫기 버튼 쪽)가 보이도록 맞춘다.
  */
@@ -320,16 +397,8 @@ export function overflowPan(popup: Box, map: Box, margin: number): { dx: number;
   };
 }
 
-/** 말풍선 최대 크기: 지도 안에 (여백 포함) 들어가고, 높이는 화면의 45%도 넘지 않는다. gap은 마커와의 간격 */
-export function popupMaxSize(mapWidth: number, mapHeight: number, gap: number, margin: number, viewportHeight: number) {
-  return {
-    maxWidth: Math.max(120, mapWidth - margin * 2),
-    maxHeight: Math.max(80, Math.min(viewportHeight * 0.45, mapHeight - margin * 2 - gap)),
-  };
-}
-
 export const Z_REPORT_BASE = 10;
-const Z_TIER = 450; // 한 등급(확인 필요 / 정상)이 쓰는 z 범위. 팝업(1000)보다 항상 낮다
+const Z_TIER = 450; // 한 등급(확인 필요 / 정상)이 쓰는 z 범위. 선택 카드·안내(950 이상)보다 항상 낮다
 
 /**
  * 제보 마커 z-index. groupIndex는 groupReports가 돌려준 순서(확인 필요 먼저, 약한 순)의 자리.

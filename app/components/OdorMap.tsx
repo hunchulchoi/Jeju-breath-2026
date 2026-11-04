@@ -2,10 +2,11 @@
 
 import { useCallback, useState } from "react";
 import { INTENSITY_COLORS, INTENSITY_LABELS, INTENSITY_TEXT, REVIEW_COLOR } from "@/lib/types";
+import SelectionCard from "./SelectionCard";
 import KakaoOdorMap from "./KakaoOdorMap";
 import LeafletOdorMap from "./LeafletOdorMap";
 import { kakaoFailed, markKakaoFailed } from "./kakaoSdk";
-import type { OdorMapProps } from "./odorMapCommon";
+import { refreshSelection, selectionKey, type MapSelection, type OdorMapProps } from "./odorMapCommon";
 
 export { colorOf, photoSrc } from "./odorMapCommon";
 export type { MeToo, MyPosition } from "./odorMapCommon";
@@ -17,6 +18,7 @@ export type { MeToo, MyPosition } from "./odorMapCommon";
  * 스스로 실패를 알리고, 그러면 같은 자리에서 Leaflet으로 바뀐다 (실패는 방문 동안 기억해 다시 시도하지 않는다).
  * 지도 컨테이너의 data-map-provider에 "kakao"(타일 확인됨) | "kakao-loading" | "leaflet"이 남는다.
  * onTileFailed(타일이 하나도 안 뜨면 목록 전환)는 Leaflet일 때만 불린다.
+ * 마커·측정소·바람 화살표를 누르면 지도 위 팝업 대신 지도 바로 아래 '선택한 곳' 카드가 열린다 (선택 상태는 여기서 관리).
  */
 export default function OdorMap({
   kakaoKey,
@@ -24,14 +26,22 @@ export default function OdorMap({
   ...props
 }: OdorMapProps & { onTileFailed?: () => void; kakaoKey?: string }) {
   const [, rerender] = useState(0);
+  const [selection, setSelection] = useState<MapSelection | null>(null);
+  const { reports, air, weather, meToo } = props;
+  // 제보·측정소가 새로 받아져도 최신 값으로 다시 찾고, 사라졌으면 닫는다
+  const shown = refreshSelection(selection, reports, air, weather);
+  const selectedKey = shown ? selectionKey(shown) : null;
+  const onSelect = useCallback((s: MapSelection | null) => setSelection(s), []);
+  const close = useCallback(() => setSelection(null), []);
+  const card = <SelectionCard selection={shown} meToo={meToo} reports={reports} onClose={close} />;
   const onKakaoFail = useCallback(() => {
     markKakaoFailed();
     rerender((n) => n + 1);
   }, []);
   if (kakaoKey && !kakaoFailed()) {
-    return <KakaoOdorMap {...props} appKey={kakaoKey} onFail={onKakaoFail} />;
+    return <KakaoOdorMap {...props} onSelect={onSelect} selectedKey={selectedKey} belowMap={card} appKey={kakaoKey} onFail={onKakaoFail} />;
   }
-  return <LeafletOdorMap {...props} onTileFailed={onTileFailed} />;
+  return <LeafletOdorMap {...props} onSelect={onSelect} selectedKey={selectedKey} belowMap={card} onTileFailed={onTileFailed} />;
 }
 
 export function Legend({ withMe = false, withAir = false, withWeather = false }: { withMe?: boolean; withAir?: boolean; withWeather?: boolean }) {

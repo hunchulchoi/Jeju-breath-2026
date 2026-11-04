@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { markerZ, overflowPan, popupMaxSize, Z_REPORT_BASE , weatherBadge, groupReports, markerHtml, findHighlightGroup, nearestPoint, airEmoji, buildInfoContent, infoBubbleHtml, infoFooter, windState } from "@/app/components/odorMapCommon";
+import { INTENSITY_LABELS } from "@/lib/types";
+import { markerZ, overflowPan, Z_REPORT_BASE, weatherBadge, airBadge, airCardData, windCardData, reportCardData, meTooOffer, refreshSelection, selectionKey, applySelectedClass, groupReports, markerHtml, findHighlightGroup, nearestPoint, airEmoji, buildInfoContent, infoBubbleHtml, infoFooter, windState } from "@/app/components/odorMapCommon";
 
 const map = { left: 0, top: 0, right: 400, bottom: 300 };
 const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
@@ -28,19 +29,6 @@ describe("overflowPan", () => {
   });
 });
 
-describe("popupMaxSize", () => {
-  it("fits width within map minus margins", () => {
-    expect(popupMaxSize(360, 600, 20, 12, 800).maxWidth).toBe(336);
-  });
-  it("small map (40vh) limits height below 45vh", () => {
-    const { maxHeight } = popupMaxSize(360, 280, 20, 12, 700);
-    expect(maxHeight).toBe(280 - 24 - 20);
-  });
-  it("tall map capped at 45vh", () => {
-    expect(popupMaxSize(360, 900, 20, 12, 700).maxHeight).toBe(315);
-  });
-});
-
 describe("markerZ", () => {
   it("needs-review always below normal, even with higher index", () => {
     expect(markerZ(5, true)).toBeLessThan(markerZ(0, false));
@@ -50,31 +38,36 @@ describe("markerZ", () => {
     expect(markerZ(1, false)).toBeLessThan(markerZ(2, false));
     expect(markerZ(0, true)).toBeLessThan(markerZ(1, true));
   });
-  it("stays above me (5) and below popup (1000)", () => {
+  it("stays above me (5) and below the info bubble (950)", () => {
     expect(markerZ(0, true)).toBeGreaterThanOrEqual(Z_REPORT_BASE);
-    expect(markerZ(10_000, false)).toBeLessThan(1000);
+    expect(markerZ(10_000, false)).toBeLessThan(950);
   });
 });
 
 describe("weatherBadge 바람 정보 없음과 무풍 구분 (Codex 리뷰)", () => {
   const base = { site: "716", name: "애월", lat: 33.46, lng: 126.33, at: "2026-11-04T09:30:00+09:00", temp: 18, humidity: 65, sky: "흐림", rain_1h: null, source: "Open-Meteo" };
   it("풍향이 없고 풍속이 8m/s면 무풍이 아니라 정보 없음", () => {
-    const b = weatherBadge({ ...base, wind_speed: 8, wind_dir: null });
-    expect(b.html).toContain("정보 없음");
-    expect(b.popup).not.toContain("머물 수 있어요");
+    const w = { ...base, wind_speed: 8, wind_dir: null };
+    expect(weatherBadge(w).html).toContain("정보 없음");
+    expect(windCardData(w).lines.join()).not.toContain("머물 수 있어요");
   });
   it("풍속이 없으면 정보 없음", () => {
     expect(weatherBadge({ ...base, wind_speed: null, wind_dir: 90 }).html).toContain("정보 없음");
   });
   it("풍속 0.3m/s면 무풍 안내", () => {
-    const b = weatherBadge({ ...base, wind_speed: 0.3, wind_dir: null });
-    expect(b.html).toContain("무풍");
-    expect(b.popup).toContain("머물 수 있어요");
+    const w = { ...base, wind_speed: 0.3, wind_dir: null };
+    expect(weatherBadge(w).html).toContain("무풍");
+    expect(windCardData(w).lines[0]).toContain("머물 수 있어요");
   });
   it("동풍 6m/s면 화살표와 서쪽 안내", () => {
-    const b = weatherBadge({ ...base, wind_speed: 6, wind_dir: 90 });
-    expect(b.popup).toContain("동풍");
-    expect(b.popup).toContain("서쪽으로");
+    const d = windCardData({ ...base, wind_speed: 6, wind_dir: 90 });
+    expect(d.title).toBe("애월 날씨");
+    expect(d.lines[0]).toContain("동풍");
+    expect(d.lines[0]).toContain("서쪽으로");
+    expect(d.lines).toContain("기온 18.0℃");
+    expect(d.lines).toContain("습도 65%");
+    expect(d.lines).toContain("하늘 상태: 흐림");
+    expect(d.source).toBe("Open-Meteo · 09:30 기준");
   });
 });
 
@@ -152,5 +145,79 @@ describe("방금 내 제보 강조", () => {
   it("no highlight without id or when id is absent", () => {
     expect(groups.some((g) => markerHtml(g).includes("odor-mine"))).toBe(false);
     expect(findHighlightGroup(groups, 99)).toBeNull();
+  });
+});
+
+describe("선택 카드 데이터", () => {
+  const rep = (id: number, o: Record<string, unknown> = {}) =>
+    ({ id, grid_lat: 33.46, grid_lng: 126.33, intensity: 3, needs_review: false, odor_type: "알 수 없음", symptoms: ["두통"], photo_ids: [], merged_count: 1, reported_at: `2026-11-04T0${id}:00:00Z`, ...o }) as never;
+  const near = { lat: 33.4605, lng: 126.3305 };
+  const mk = (over: Record<string, unknown> = {}) => ({ origin: near, onPick: () => {}, ...over });
+  const g = groupReports([rep(2, { intensity: 4, photo_ids: [7, 8], merged_count: 3 }), rep(1)])[0];
+
+  it("제보: 제목·줄(시각순)·사진·합쳐진 수", () => {
+    const d = reportCardData(g, undefined);
+    expect(d.title).toBe("이 근처 제보 2건 · 최고 강도 4");
+    expect(d.needsReview).toBe(false);
+    expect(d.lines.map((l) => l.id)).toEqual([1, 2]);
+    expect(d.lines[1].text).toContain("(3번 제보)");
+    expect(d.lines[1].text).toContain("두통");
+    expect(d.lines[1].photoIds).toEqual([7, 8]);
+    expect(d.meToo).toBeNull();
+  });
+  it("확인 필요는 표시되고 저도 버튼은 없다", () => {
+    const rg = groupReports([rep(1, { needs_review: true })])[0];
+    const d = reportCardData(rg, mk());
+    expect(d.needsReview).toBe(true);
+    expect(d.meToo).toBeNull();
+  });
+  it("저도 버튼 조건: 설정 있음 + 1km 이내 + 제출 중 아님 + 확인 필요 아님", () => {
+    const top = g.top;
+    expect(meTooOffer(top, mk())).toEqual({ id: 2, intensity: 4, label: INTENSITY_LABELS[4].short });
+    expect(meTooOffer(top, undefined)).toBeNull();
+    expect(meTooOffer(top, mk({ disabled: true }))).toBeNull();
+    expect(meTooOffer(top, mk({ origin: null }))).toBeNull();
+    expect(meTooOffer(top, mk({ origin: { lat: 33.6, lng: 126.33 } }))).toBeNull();
+  });
+
+  const st = { site: "716", name: "애월", lat: 33.46, lng: 126.33, approx: true, measured_at: "2026-11-04T09:00:00+09:00", cai: 2 as const, rep_item: null, pm10: 30, pm25: null, o3: 0.03 };
+  it("측정소 카드", () => {
+    const d = airCardData(st);
+    expect(d.title).toBe("애월 측정소 (대략 위치)");
+    expect(d.measured).toBe("9시 측정");
+    expect(d.grade).toBe("보통");
+    expect(d.rows).toEqual([
+      { name: "PM10", value: "30㎍/㎥" },
+      { name: "PM2.5", value: "-" },
+      { name: "오존", value: "0.03ppm" },
+    ]);
+    expect(airBadge(st).html).toContain('data-sel="a:716"');
+  });
+
+  it("선택은 최신 데이터로 다시 찾고, 사라지면 닫힌다", () => {
+    const sel = { kind: "reports" as const, group: g };
+    expect(refreshSelection(sel, [rep(1), rep(2, { intensity: 5 })], undefined, undefined)).toMatchObject({ kind: "reports", group: { top: { intensity: 5 } } });
+    expect(refreshSelection(sel, [], undefined, undefined)).toBeNull();
+    expect(refreshSelection({ kind: "air", station: st }, null, [{ ...st, pm10: 99 }], undefined)).toMatchObject({ station: { pm10: 99 } });
+    expect(refreshSelection({ kind: "air", station: st }, null, [], undefined)).toBeNull();
+    expect(refreshSelection(null, [], [], [])).toBeNull();
+    expect(selectionKey(sel)).toBe(markerHtml(g).match(/data-sel="([^"]+)"/)![1]);
+  });
+
+  it("선택 링 클래스는 키가 같은 요소에만", () => {
+    const mkEl = (key: string) => {
+      const classes = new Set<string>();
+      return {
+        dataset: { sel: key },
+        classList: { toggle: (c: string, on: boolean) => (on ? classes.add(c) : classes.delete(c)) },
+        has: (c: string) => classes.has(c),
+      };
+    };
+    const a = mkEl("a:1");
+    const b = mkEl("w:1");
+    applySelectedClass({ querySelectorAll: () => [a, b] } as never, "a:1");
+    expect([a.has("odor-selected"), b.has("odor-selected")]).toEqual([true, false]);
+    applySelectedClass({ querySelectorAll: () => [a, b] } as never, null);
+    expect([a.has("odor-selected"), b.has("odor-selected")]).toEqual([false, false]);
   });
 });
