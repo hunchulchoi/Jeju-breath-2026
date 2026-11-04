@@ -120,6 +120,8 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
   const [showHelp, setShowHelp] = useState(false);
   const [reports, setReports] = useState<PublicReport[] | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  // 접수 완료 화면 지도용: 접수 직후 다시 불러온 오늘 제보 (방금 제보 포함)
+  const [doneReports, setDoneReports] = useState<PublicReport[] | null>(null);
   const [intensity, setIntensity] = useState<number | null>(null);
   const [odor, setOdor] = useState<OdorType>("알 수 없음");
   const [odorPicked, setOdorPicked] = useState(false);
@@ -141,9 +143,10 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
   const headingRef = useRef<HTMLHeadingElement>(null);
   const startedSent = useRef(false);
   const [showAir, setShowAir] = useShowAir();
-  const { air, failed: airFailed } = useAirStations(step === "main" || step === "saving" ? today : null, showAir);
+  const mapStep = step === "main" || step === "saving" || step === "done";
+  const { air, failed: airFailed } = useAirStations(mapStep ? today : null, showAir);
   const [showWeather, setShowWeather] = useShowWeather();
-  const { weather, failed: weatherFailed, source: weatherSource } = useWeather(showWeather && (step === "main" || step === "saving"));
+  const { weather, failed: weatherFailed, source: weatherSource } = useWeather(showWeather && mapStep);
 
   // 저장된 동의가 현재 문구 버전과 같으면 안내·동의를 건너뛴다
   useEffect(() => {
@@ -200,8 +203,24 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
     };
   }, [step, today]);
 
+  // 접수 직후 그 제보가 저장된 날짜의 제보를 다시 불러온다 (자정 무렵·병합으로 날짜가 오늘과 다를 수 있음, Codex 리뷰)
+  // 실패하면 제보 없이 내 위치만 보인다
+  const savedDay = saved?.reported_at?.slice(0, 10) ?? today;
+  useEffect(() => {
+    if (step !== "done") return;
+    let cancelled = false;
+    setDoneReports(null);
+    fetch(`/api/reports?date=${savedDay}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((list: { reports: PublicReport[] }) => !cancelled && setDoneReports(list.reports))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [step, savedDay]);
+
   // 제보 화면에 들어오면 바로 위치를 확인한다 (테스트 좌표 토글·다시 시도로 다시 실행)
-  const { coords, loc } = useMyPosition(step === "main" || step === "saving", {
+  const { coords, loc } = useMyPosition(mapStep, {
     demo: useDemoCoords ? DEMO_COORDS : null,
     retry: locTry,
     onFail: postLocationFailure,
@@ -376,6 +395,9 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
     setSubmitError("");
     setShowHelp(false);
     setReports(null);
+    setDoneReports(null);
+    // 접수 완료 화면에서도 위치를 유지하므로, 다시 제보할 때는 위치를 새로 받는다
+    setLocTry((n) => n + 1);
     removePhoto();
     setStep("main");
   }
@@ -774,6 +796,17 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
           {saved.photo === "saved" ? <p className="muted">사진도 함께 저장했어요.</p> : null}
           {saved.photo && saved.photo !== "saved" ? <p className="notice">{PHOTO_MESSAGES[saved.photo]}</p> : null}
           {saved.intensity === 5 ? <Emergency119 text="숨쉬기 힘들거나 몸이 불편하면 바로 119에 전화하세요." /> : null}
+          <OdorMap
+            kakaoKey={kakaoKey}
+            reports={doneReports}
+            air={showAir ? air : undefined}
+            weather={showWeather ? weather : undefined}
+            me={loc === "ok" ? coords : null}
+            highlightId={saved.id}
+            infoAnchor="me"
+            className="map done-map"
+          />
+          {saved.today_nearby_count === 0 ? <p className="muted">근처(1km) 제보는 아직 없어요. 첫 제보예요.</p> : null}
           <Link href="/map?from=report" className="btn">
             오늘 지도 보기
           </Link>

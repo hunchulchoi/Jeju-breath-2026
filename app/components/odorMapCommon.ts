@@ -50,6 +50,8 @@ export interface OdorMapProps {
    * 보여 줄 내용은 air·weather prop에서 만든다 (꺼져 있으면 해당 아이콘이 빠진다).
    */
   infoAnchor?: "me" | "center";
+  /** 방금 접수한 제보 id. 그 제보가 든 칸 마커에 링과 "방금 내 제보" 라벨을 붙이고, 지도 중심을 그 칸에 둔다 */
+  highlightId?: number;
 }
 
 export const photoSrc = (id: number) => `/api/photos/${id}`;
@@ -128,13 +130,27 @@ export function groupReports(reports: PublicReport[]): MarkerGroup[] {
   });
 }
 
-/** 제보 마커 HTML (.odor-marker) */
-export function markerHtml(g: MarkerGroup) {
+/** 이 칸에 highlightId 제보가 들어 있는가 (병합된 제보도 같은 id) */
+export function hasHighlight(g: MarkerGroup, highlightId: number | undefined) {
+  return highlightId !== undefined && g.reports.some((r) => r.id === highlightId);
+}
+
+/** highlightId 제보가 든 칸 (없으면 null) */
+export function findHighlightGroup(groups: MarkerGroup[], highlightId: number | undefined) {
+  return groups.find((g) => hasHighlight(g, highlightId)) ?? null;
+}
+
+export const HIGHLIGHT_LABEL = "방금 내 제보";
+
+/** 제보 마커 HTML (.odor-marker). 강조 칸만 바깥 링(.odor-mine)과 라벨이 붙는다 */
+export function markerHtml(g: MarkerGroup, highlightId?: number) {
   const { top, count, size } = g;
   const fg = top.needs_review ? "#1F2A2E" : INTENSITY_TEXT[top.intensity];
+  const mine = hasHighlight(g, highlightId);
   return (
-    `<div class="odor-marker" style="width:${size}px;height:${size}px;background:${colorOf(top)};color:${fg}">` +
-    `${top.intensity}${count > 1 ? `<span class="odor-count">${count}</span>` : ""}</div>`
+    `<div class="odor-marker${mine ? " odor-mine" : ""}" style="width:${size}px;height:${size}px;background:${colorOf(top)};color:${fg}">` +
+    `${top.intensity}${count > 1 ? `<span class="odor-count">${count}</span>` : ""}` +
+    `${mine ? `<span class="odor-mine-label">${HIGHLIGHT_LABEL}</span>` : ""}</div>`
   );
 }
 

@@ -416,6 +416,30 @@ select {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
+/* 방금 내 제보 강조: 바깥 3px 브랜드색 링 + 라벨 */
+.odor-marker.odor-mine {
+  box-shadow: 0 0 0 3px var(--brand), 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.odor-mine-label {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.map.done-map {
+  height: 240px;
+  min-height: 240px;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

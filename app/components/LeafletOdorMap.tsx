@@ -11,8 +11,10 @@ import {
   buildInfoContent,
   infoBubbleHtml,
   overflowPan,
+  findHighlightGroup,
   focusPoints,
   groupReports,
+  hasHighlight,
   markerHtml,
   pickMeToo,
   reportPopupHtml,
@@ -34,6 +36,7 @@ export default function LeafletOdorMap({
   air,
   weather,
   infoAnchor = "me",
+  highlightId,
   onTileFailed,
 }: OdorMapProps & { onTileFailed?: () => void }) {
   const mapEl = useRef<HTMLDivElement>(null);
@@ -126,15 +129,21 @@ export default function LeafletOdorMap({
     for (const g of groupReports(reports)) {
       const icon = L.divIcon({
         className: "",
-        html: markerHtml(g),
+        html: markerHtml(g, highlightId),
         iconSize: [g.size, g.size],
         iconAnchor: [g.size / 2, g.size / 2],
       });
-      L.marker([g.lat, g.lng], { icon, title: g.label, alt: g.label, keyboard: true })
+      L.marker([g.lat, g.lng], {
+        icon,
+        title: g.label,
+        alt: g.label,
+        keyboard: true,
+        zIndexOffset: hasHighlight(g, highlightId) ? 1000 : 0,
+      })
         .bindPopup(() => reportPopupHtml(g, meTooRef.current))
         .addTo(layer);
     }
-  }, [reports, ready, meTooRef]);
+  }, [reports, ready, meTooRef, highlightId]);
 
   // 대기질 측정소
   useEffect(() => {
@@ -231,6 +240,11 @@ export default function LeafletOdorMap({
     const L = leafletRef.current;
     const map = mapRef.current;
     if (!L || !map) return;
+    const mineGroup = reports ? findHighlightGroup(groupReports(reports), highlightId) : null;
+    if (mineGroup) {
+      map.setView([mineGroup.lat, mineGroup.lng], ME_ZOOM);
+      return;
+    }
     if (me) {
       map.setView([me.lat, me.lng], ME_ZOOM);
       return;
@@ -243,7 +257,7 @@ export default function LeafletOdorMap({
         maxZoom: 15,
       });
     }
-  }, [reports, me, ready]);
+  }, [reports, me, ready, highlightId]);
 
   // 숨겨 둔 탭이 다시 보이면 크기 다시 계산
   useEffect(() => {

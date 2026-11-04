@@ -64,14 +64,21 @@ function measuredAt(dt10: string | null | undefined): string | null {
 }
 
 /** 측정소별 가장 최근 시각 한 건. 모르는 SITE는 버린다 */
+function hasGrade(row: AirRow): boolean {
+  return [row.REP_CAI, row.PM10_CAI, row.PM25_CAI, row.O3_CAI, row.NO2_CAI, row.CO_CAI, row.SO2_CAI].some((v) => cai(v) !== null);
+}
+
 export function latestBySite(rows: AirRow[]): AirStation[] {
-  const best = new Map<string, { at: string; row: AirRow }>();
+  const best = new Map<string, { at: string; row: AirRow; graded: boolean }>();
   for (const row of rows) {
     const site = row.SITE ?? "";
     const at = measuredAt(row.DT10);
     if (!AIR_SITES[site] || !at) continue;
+    // 정시 직후에는 수치만 있고 등급이 비어 있을 때가 있다. 등급이 있는 가장 최근 시각을 우선하고,
+    // 그날 등급이 하나도 없으면 가장 최근 시각을 쓴다.
+    const graded = hasGrade(row);
     const cur = best.get(site);
-    if (!cur || at > cur.at) best.set(site, { at, row });
+    if (!cur || (graded && !cur.graded) || (graded === cur.graded && at > cur.at)) best.set(site, { at, row, graded });
   }
   const out: AirStation[] = [];
   for (const [site, { at, row }] of best) {

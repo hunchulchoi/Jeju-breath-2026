@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { markerZ, overflowPan, popupMaxSize, Z_REPORT_BASE , weatherBadge, nearestPoint, airEmoji, buildInfoContent, infoBubbleHtml, infoFooter, windState } from "@/app/components/odorMapCommon";
+import { markerZ, overflowPan, popupMaxSize, Z_REPORT_BASE , weatherBadge, groupReports, markerHtml, findHighlightGroup, nearestPoint, airEmoji, buildInfoContent, infoBubbleHtml, infoFooter, windState } from "@/app/components/odorMapCommon";
 
 const map = { left: 0, top: 0, right: 400, bottom: 300 };
 const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
@@ -132,5 +132,25 @@ describe("대기·바람 아이콘 안내", () => {
   it("출처 문구", () => {
     expect(infoFooter(null, null)).toBe("");
     expect(infoFooter(st, { ...w, source: "Open-Meteo" })).toBe("애월 측정소 기준 · Open-Meteo 09:00");
+  });
+});
+
+describe("방금 내 제보 강조", () => {
+  const rep = (id: number, lat: number, intensity = 3, needs_review = false) =>
+    ({ id, grid_lat: lat, grid_lng: 126.3, intensity, needs_review, odor_type: "알 수 없음", symptoms: [], photo_ids: [], merged_count: 1, reported_at: "2026-11-04T01:00:00Z" }) as never;
+  const groups = groupReports([rep(1, 33.4), rep(2, 33.5), rep(3, 33.5, 2, true)]);
+  it("highlights only the cell with the id", () => {
+    const html = groups.map((g) => markerHtml(g, 2));
+    expect(html.filter((h) => h.includes("odor-mine-label"))).toHaveLength(1);
+    expect(html.filter((h) => h.includes('odor-marker odor-mine"'))).toHaveLength(1);
+    expect(findHighlightGroup(groups, 2)?.lat).toBe(33.5);
+  });
+  it("needs_review cell is highlighted separately", () => {
+    expect(findHighlightGroup(groups, 3)?.top.needs_review).toBe(true);
+    expect(groups.map((g) => markerHtml(g, 3)).filter((h) => h.includes("방금 내 제보"))).toHaveLength(1);
+  });
+  it("no highlight without id or when id is absent", () => {
+    expect(groups.some((g) => markerHtml(g).includes("odor-mine"))).toBe(false);
+    expect(findHighlightGroup(groups, 99)).toBeNull();
   });
 });

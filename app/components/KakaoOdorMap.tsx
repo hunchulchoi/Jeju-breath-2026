@@ -9,8 +9,10 @@ import {
   bindInfoToggle,
   buildInfoContent,
   infoBubbleHtml,
+  findHighlightGroup,
   focusPoints,
   groupReports,
+  hasHighlight,
   markerHtml,
   markerZ,
   overflowPan,
@@ -71,6 +73,7 @@ export default function KakaoOdorMap({
   air,
   weather,
   infoAnchor = "me",
+  highlightId,
   appKey,
   onFail,
 }: OdorMapProps & { appKey: string; onFail: () => void }) {
@@ -250,7 +253,8 @@ export default function KakaoOdorMap({
     reportOvRef.current.forEach((o) => o.setMap(null));
     closePopup();
     reportOvRef.current = groupReports(reports).map((g, idx) => {
-      const el = elementFromHtml(markerHtml(g));
+      const mine = hasHighlight(g, highlightId);
+      const el = elementFromHtml(markerHtml(g, highlightId));
       makeActivatable(el, g.label, () =>
         openPopup(g.lat, g.lng, reportPopupHtml(g, meTooRef.current), g.size / 2 + 8),
       );
@@ -260,14 +264,14 @@ export default function KakaoOdorMap({
         xAnchor: 0.5,
         yAnchor: 0.5,
         // groupReports의 정렬 순서(확인 필요 → 약한 순 → 강한 순)대로 위에 쌓는다
-        zIndex: markerZ(idx, g.top.needs_review),
+        zIndex: markerZ(mine ? Number.MAX_SAFE_INTEGER : idx, g.top.needs_review), // 강조 칸은 같은 등급에서 맨 위
         clickable: true,
       });
       ov.setMap(map);
       return ov;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reports, ready]);
+  }, [reports, ready, highlightId]);
 
   // 대기질 측정소 (제보 마커보다 아래)
   useEffect(() => {
@@ -393,6 +397,12 @@ export default function KakaoOdorMap({
     const kakao = kakaoRef.current;
     const map = mapRef.current;
     if (!kakao || !map) return;
+    const mineGroup = reports ? findHighlightGroup(groupReports(reports), highlightId) : null;
+    if (mineGroup) {
+      map.setLevel(ME_LEVEL);
+      map.setCenter(new kakao.maps.LatLng(mineGroup.lat, mineGroup.lng));
+      return;
+    }
     if (me) {
       map.setLevel(ME_LEVEL);
       map.setCenter(new kakao.maps.LatLng(me.lat, me.lng));
@@ -405,7 +415,7 @@ export default function KakaoOdorMap({
     focus.forEach((p) => bounds.extend(new kakao.maps.LatLng(p.lat, p.lng)));
     map.setBounds(bounds, 40, 40, 40, 40);
     if (map.getLevel() < MAX_FIT_DETAIL_LEVEL) map.setLevel(MAX_FIT_DETAIL_LEVEL);
-  }, [reports, me, ready]);
+  }, [reports, me, ready, highlightId]);
 
   // 숨겨 둔 탭이 다시 보이면 크기 다시 계산
   useEffect(() => {

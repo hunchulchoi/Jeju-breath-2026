@@ -41,7 +41,8 @@ describe("latestBySite", () => {
   it("REP_CAI가 null이면 측정된 모든 항목 등급 중 가장 나쁜 값, 하나도 없으면 null", () => {
     expect(by("722").cai).toBe(3);
     expect(by("722")).toMatchObject({ pm10: null, pm25: 40, o3: null, rep_item: null });
-    expect(by("725").cai).toBeNull();
+    // 725는 최신 시각에 등급이 없어 등급이 있는 직전 시각(1)을 쓴다
+    expect(by("725").cai).toBe(1);
   });
   it("대표 등급이 없을 때 오존이 매우 나쁘면 미세먼지가 좋아도 매우나쁨 (Codex 리뷰)", () => {
     const xml = `<openapi><header><resultCode>00</resultCode><resultMsg>success</resultMsg></header><body><data><list>
@@ -98,5 +99,24 @@ describe("fetchJejuAir", () => {
     expect(url).toContain("https://air.jeju.go.kr/");
     expect(url).toContain("date=20261103");
     expect(signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe("등급이 비어 있는 최신 시각", () => {
+  it("최신 시각에 등급이 없으면 등급이 있는 직전 시각을 쓴다", () => {
+    const row = (dt: string, rep: string, pm10cai: string) =>
+      `<list><SITE>716</SITE><DT10>${dt}</DT10><REP_ITEM>PM10</REP_ITEM><REP_CAI>${rep}</REP_CAI><PM10>86</PM10><PM10_CAI>${pm10cai}</PM10_CAI><PM25>19</PM25><PM25_CAI>null</PM25_CAI><O3>null</O3><O3_CAI>null</O3_CAI><NO2>null</NO2><NO2_CAI>null</NO2_CAI><CO>null</CO><CO_CAI>null</CO_CAI><SO2>null</SO2><SO2_CAI>null</SO2_CAI></list>`;
+    const xml = `<openapi><header><resultCode>00</resultCode><resultMsg>success</resultMsg></header><body><data>${row("2026110410", "2", "2")}${row("2026110411", "null", "null")}</data></body></openapi>`;
+    const [st] = latestBySite(parseJejuAirXml(xml));
+    expect(st.cai).toBe(2);
+    expect(st.measured_at).toBe("2026-11-04T10:00:00+09:00");
+  });
+  it("그날 등급이 하나도 없으면 가장 최근 시각", () => {
+    const row = (dt: string) =>
+      `<list><SITE>716</SITE><DT10>${dt}</DT10><REP_ITEM>null</REP_ITEM><REP_CAI>null</REP_CAI><PM10>50</PM10><PM10_CAI>null</PM10_CAI><PM25>null</PM25><PM25_CAI>null</PM25_CAI><O3>null</O3><O3_CAI>null</O3_CAI><NO2>null</NO2><NO2_CAI>null</NO2_CAI><CO>null</CO><CO_CAI>null</CO_CAI><SO2>null</SO2><SO2_CAI>null</SO2_CAI></list>`;
+    const xml = `<openapi><header><resultCode>00</resultCode><resultMsg>success</resultMsg></header><body><data>${row("2026110410")}${row("2026110411")}</data></body></openapi>`;
+    const [st] = latestBySite(parseJejuAirXml(xml));
+    expect(st.cai).toBeNull();
+    expect(st.measured_at).toBe("2026-11-04T11:00:00+09:00");
   });
 });
