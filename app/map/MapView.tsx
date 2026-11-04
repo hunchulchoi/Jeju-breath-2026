@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import OdorMap, { Legend, colorOf, photoSrc } from "../components/OdorMap";
-import { AirSource, AirToggle, useAirStations, useShowAir } from "../components/AirToggle";
-import { WeatherSource, WeatherToggle, WindSummary, useShowWeather, useWeather } from "../components/WeatherToggle";
+import OdorMap, { colorOf, photoSrc } from "../components/OdorMap";
+import { MapSettings } from "../components/MapSettings";
+import { useAirStations, useShowAir } from "../components/AirToggle";
+import { WindSummary, useShowWeather, useWeather } from "../components/WeatherToggle";
 import { useDayData } from "../components/useDayData";
 import { TopBar } from "../components/TopBar";
 import { formatTime } from "@/lib/time";
@@ -56,9 +57,9 @@ export default function MapView({
 
   return (
     <main className="container">
-      <TopBar badges={hasDemo ? <span className="badge">시연 모드: 가상 데이터</span> : null} />
-      <h1>날짜별 악취 제보 지도 (제보 기준)</h1>
-      <p className="muted small">주민이 보낸 제보만 표시해요. 제보가 없다고 악취가 없었다는 뜻은 아니에요.</p>
+      <TopBar badges={hasDemo ? <span className="badge">시연용 가상 데이터</span> : null} />
+      <h1>날짜별 악취 제보 지도</h1>
+      <p className="muted small">주민 제보 기준이에요. 제보가 없다고 악취가 없었다는 뜻은 아니에요.</p>
 
       <div className="controls">
         <label>
@@ -87,9 +88,7 @@ export default function MapView({
       {loadError ? <p className="notice">제보를 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.</p> : null}
 
       <div hidden={tab !== "map"}>
-        <AirToggle show={showAir} onChange={setShowAir} failed={airFailed} />
-        <WeatherToggle show={showWeather} onChange={setShowWeather} failed={weatherFailed} notToday={!isToday} />
-        {weatherOn ? <WindSummary points={weather} origin={null} /> : null}
+        <div className="stack">
         <OdorMap
           kakaoKey={kakaoKey}
           infoAnchor="center"
@@ -99,22 +98,39 @@ export default function MapView({
           air={showAir ? air : undefined}
           weather={weatherOn ? weather : undefined}
         />
-        <Legend withAir={showAir} withWeather={weatherOn} />
-        {showAir ? <AirSource /> : null}
-        {weatherOn ? <WeatherSource source={weatherSource} /> : null}
+        <MapSettings
+          showAir={showAir}
+          onAir={setShowAir}
+          airFailed={airFailed}
+          showWeather={showWeather}
+          onWeather={setShowWeather}
+          weatherFailed={weatherFailed}
+          weatherSource={weatherSource}
+          notToday={!isToday}
+          withWeatherLegend={weatherOn}
+        >
+          {weatherOn ? <WindSummary points={weather} origin={null} /> : null}
+        </MapSettings>
+        </div>
       </div>
 
       {tab === "list" ? <ReportList reports={reports} /> : null}
 
-      <p className="summary" aria-live="polite" style={{ marginTop: 12 }}>
+      <p className="summary" aria-live="polite" style={{ marginTop: "var(--gap-2)" }}>
         {summary
-          ? `${day === days[0] ? "오늘" : dayLabel(day, days[0])} 제보 ${summary.total}건 · 강도 4 이상 ${summary.high_intensity}건 · 위치 실패 ${summary.location_failures}회(저장 안 함)`
+          ? `${day === days[0] ? "오늘" : dayLabel(day, days[0])} 제보 ${summary.total}건 · 강도 4 이상 ${summary.high_intensity}건`
           : "불러오는 중이에요"}
       </p>
+      {summary ? (
+        <details>
+          <summary>집계 상세</summary>
+          <p className="muted small">위치를 확인하지 못해 저장하지 않은 횟수: {summary.location_failures}회</p>
+        </details>
+      ) : null}
       <p className="muted small">지도 위치는 약 200m 단위의 대략적인 위치예요. 원인이나 책임을 판단하지 않아요.</p>
-      <p>
-        <Link href="/stats">통계 보기</Link>
-      </p>
+      <Link href="/stats" className="text-link" style={{ justifyContent: "flex-start" }}>
+        통계 보기
+      </Link>
     </main>
   );
 }

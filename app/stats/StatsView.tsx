@@ -54,9 +54,9 @@ export default function StatsView({ initial }: { initial: Stats }) {
 
   return (
     <main className="container">
-      <TopBar badges={t.has_demo ? <span className="badge">시연 모드: 가상 데이터</span> : null} />
-      <h1>악취 제보 통계 (제보 기준)</h1>
-      <p className="muted small">주민이 보낸 제보를 모아 센 숫자예요. 제보가 없다고 악취가 없었다는 뜻은 아니에요.</p>
+      <TopBar badges={t.has_demo ? <span className="badge">시연용 가상 데이터</span> : null} />
+      <h1>악취 제보 통계</h1>
+      <p className="muted small">주민 제보 기준이에요. 주민이 보낸 제보를 모아 센 숫자예요. 제보가 없다고 악취가 없었다는 뜻은 아니에요.</p>
 
       <div className="seg" role="group" aria-label="기간 선택">
         {PERIODS.map((p) => (
@@ -72,8 +72,7 @@ export default function StatsView({ initial }: { initial: Stats }) {
       <div className="tiles" style={{ opacity: loading ? 0.6 : 1 }}>
         <Tile n={t.reports} unit="건" label="제보" />
         <Tile n={t.high} unit="건" label="강도 4 이상" />
-        <Tile n={t.merged_extra} unit="건" label="같은 곳 다시 제보(합쳐짐)" />
-        <Tile n={t.location_failures} unit="회" label="위치 실패(저장 안 함)" />
+        <Tile n={t.merged_extra} unit="건" label="합쳐진 제보" />
       </div>
       {t.review > 0 ? (
         <p className="muted small">확인이 필요한 제보 {t.review}건은 아래 숫자와 그래프에서 뺐어요.</p>
@@ -84,7 +83,15 @@ export default function StatsView({ initial }: { initial: Stats }) {
         <HourChart stats={stats} empty={empty} />
         <IntensityChart stats={stats} empty={empty} />
         <OdorChart stats={stats} empty={empty} />
-        <FunnelChart stats={stats} />
+        <details className="card">
+          <summary>참여·운영 지표</summary>
+          <div className="stack">
+            <div className="tiles two">
+              <Tile n={t.location_failures} unit="회" label="위치 실패(저장 안 함)" />
+            </div>
+            <FunnelChart stats={stats} />
+          </div>
+        </details>
       </div>
 
       <div className="stack" style={{ marginTop: 20 }}>
@@ -146,7 +153,9 @@ interface Tip {
 }
 
 const W = 320;
-const PAD = { l: 30, r: 6, t: 20, b: 22 };
+// 글자는 viewBox 단위라 화면 폭에 따라 커진다. 휴대폰(약 326px 폭)에서 거의 1:1이라 15로 둔다
+const AXIS_FONT = 15;
+const PAD = { l: 34, r: 6, t: 22, b: 28 };
 
 /** 정수 눈금: 0부터 max를 덮는 최대 5개 */
 function niceTicks(max: number): number[] {
@@ -166,7 +175,7 @@ function topRounded(x: number, y0: number, y1: number, w: number, round: boolean
 
 function ColumnChart({
   cols,
-  height = 170,
+  height = 190,
   annotate,
   label,
 }: {
@@ -193,7 +202,7 @@ function ColumnChart({
         {ticks.map((v) => (
           <g key={v}>
             <line x1={PAD.l} x2={W - PAD.r} y1={y(v)} y2={y(v)} stroke="var(--line)" strokeWidth={1} />
-            <text x={PAD.l - 5} y={y(v) + 4} textAnchor="end" fontSize={11} fill="var(--muted)">
+            <text x={PAD.l - 5} y={y(v) + 5} textAnchor="end" fontSize={AXIS_FONT} fill="var(--muted)">
               {v}
             </text>
           </g>
@@ -237,7 +246,7 @@ function ColumnChart({
                 onClick={() => setTip({ x: cx, y: y(totals[i]), lines: c.tip })}
               />
               {c.xLabel ? (
-                <text x={cx} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--muted)">
+                <text x={cx} y={H - 7} textAnchor="middle" fontSize={AXIS_FONT} fill="var(--muted)">
                   {c.xLabel}
                 </text>
               ) : null}
@@ -253,7 +262,7 @@ function ColumnChart({
               const anchor = cx < PAD.l + 40 ? "start" : cx > W - 50 ? "end" : "middle";
               const ax = anchor === "start" ? cx - slot / 2 : anchor === "end" ? cx + slot / 2 : cx;
               return (
-                <text key={i} x={ax} y={y(totals[i]) - 5} textAnchor={anchor} fontSize={12} fontWeight={700} fill="var(--ink)">
+                <text key={i} x={ax} y={y(totals[i]) - 5} textAnchor={anchor} fontSize={AXIS_FONT} fontWeight={700} fill="var(--ink)">
                   {text}
                 </text>
               );
@@ -280,11 +289,13 @@ function ColumnChart({
 
 function DayChart({ stats, empty }: { stats: Stats; empty: boolean }) {
   const n = stats.by_day.length;
+  // 날짜 눈금은 최대 5개만 (오늘 날짜를 기준으로 같은 간격)
+  const labelStep = Math.max(1, Math.ceil(n / 5));
   const cols: Col[] = stats.by_day.map((d, i) => {
     const total = [1, 2, 3, 4, 5].reduce((s, k) => s + d.counts[k], 0);
     const nz = [1, 2, 3, 4, 5].filter((k) => d.counts[k] > 0);
     return {
-      xLabel: n <= 7 || (n - 1 - i) % 5 === 0 ? shortDay(d.date) : null,
+      xLabel: (n - 1 - i) % labelStep === 0 ? shortDay(d.date) : null,
       segs: [1, 2, 3, 4, 5].map((k) => ({
         v: d.counts[k],
         color: INTENSITY_COLORS[k],
@@ -472,7 +483,7 @@ function IntensityChart({ stats, empty }: { stats: Stats; empty: boolean }) {
         </table>
       }
     >
-      {empty ? <p className="muted">{EMPTY}</p> : <HBars rows={rows} max={Math.max(...rows.map((r) => r.value))} labelWidth="8.6em" />}
+      {empty ? <p className="muted">{EMPTY}</p> : <HBars rows={rows} max={Math.max(...rows.map((r) => r.value))} labelWidth="7.6em" />}
     </ChartCard>
   );
 }
@@ -509,7 +520,7 @@ function OdorChart({ stats, empty }: { stats: Stats; empty: boolean }) {
         </table>
       }
     >
-      {empty || !rows.length ? <p className="muted">{EMPTY}</p> : <HBars rows={rows} max={rows[0].value} labelWidth="8.6em" />}
+      {empty || !rows.length ? <p className="muted">{EMPTY}</p> : <HBars rows={rows} max={rows[0].value} labelWidth="7.6em" />}
     </ChartCard>
   );
 }
@@ -576,7 +587,7 @@ function FunnelChart({ stats }: { stats: Stats }) {
           <dd>{pct(f.map_view_rate)}</dd>
         </div>
       </dl>
-      <p className="muted small" style={{ margin: 0, fontSize: 14 }}>
+      <p className="muted small" style={{ margin: 0 }}>
         완료율 = 저장 ÷ 시작 · 위치 허용률 = 1 − 위치 실패 ÷ 시작 · 지도 열람률 = 지도 열람 ÷ 저장
       </p>
     </ChartCard>

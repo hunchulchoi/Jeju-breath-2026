@@ -10,6 +10,16 @@ export const ODOR_TYPES = [
 ] as const;
 export type OdorType = (typeof ODOR_TYPES)[number];
 
+/**
+ * 특이사항 칩 (제보 4단계, 선택 사항). 서버는 이 목록에 있는 문자열만 저장한다.
+ * 자유 입력 칸은 만들지 않는다 (이름·전화번호 같은 개인정보가 들어오는 것을 막기 위해).
+ */
+/** 생활 불편: 지도·목록에 공개할 수 있다 */
+export const IMPACT_CHOICES = ["창문 닫음", "빨래 못 널음", "잠 못 잠", "외출 어려움"] as const;
+/** 몸 상태: 건강 관련 민감정보일 수 있어 [선택] 동의가 있을 때만 받고, 공개하지 않는다 */
+export const HEALTH_CHOICES = ["두통", "메스꺼움", "숨 막힘", "눈 따가움"] as const;
+export const SYMPTOM_CHOICES = [...HEALTH_CHOICES, ...IMPACT_CHOICES] as const;
+
 /** 화면에 보여 주는 쉬운 이름 (DB 값은 그대로) */
 export const ODOR_DISPLAY: Record<OdorType, string> = {
   양돈: "돼지 축사",
@@ -78,7 +88,7 @@ export interface Summary {
 }
 
 /** 개인정보·위치정보 동의 문구 버전. 문구를 바꾸면 날짜를 올리고, 제보마다 이 값을 저장한다. */
-export const CONSENT_VERSION = "2026-11-03";
+export const CONSENT_VERSION = "2026-11-04";
 
 /** 지도에 표시하는 대기질 측정소 (제주특별자치도 보건환경연구원). 위치는 읍·동 중심의 근사값 */
 export interface AirStation {

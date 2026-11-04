@@ -32,12 +32,28 @@ describe("parseReportBody: 동의·본문", () => {
   it("consent_version이 다르면 400", () => {
     expect(parseReportBody({ ...base, consent_version: "1999-01-01" })).toEqual({ ok: false, status: 400, error: CONSENT });
   });
-  it("text·symptoms·confidence·intensity_src·draft_token은 무시한다", () => {
-    const r = parseReportBody({ ...base, text: "냄새", symptoms: ["a"], confidence: 0.9, intensity_src: "ai", draft_token: "x" });
+  it("text·confidence·intensity_src·draft_token은 무시한다", () => {
+    const r = parseReportBody({ ...base, text: "냄새", confidence: 0.9, intensity_src: "ai", draft_token: "x" });
     expect(r.ok).toBe(true);
     if (r.ok) expect(Object.keys(r.input).sort()).toEqual(
-      ["accuracy", "consent_version", "intensity", "lat", "lng", "odor_type", "user_id"],
+      ["accuracy", "consent_version", "intensity", "lat", "lng", "odor_type", "symptoms", "user_id"],
     );
+  });
+  it("symptoms는 화이트리스트 안의 값만 남기고 중복을 없앤다", () => {
+    const r = parseReportBody({
+      ...base,
+      health_consent: true,
+      symptoms: ["두통", "두통", "010-1234-5678", "홍길동", 3, null, "눈 따가움", "잠 못 잠"],
+    });
+    expect(r).toMatchObject({ ok: true, input: { symptoms: ["두통", "눈 따가움", "잠 못 잠"] } });
+    // health_consent가 true가 아니면 몸 상태 항목은 버린다
+    for (const hc of [undefined, false, "true", 1]) {
+      expect(parseReportBody({ ...base, health_consent: hc, symptoms: ["두통", "창문 닫음"] })).toMatchObject({
+        ok: true,
+        input: { symptoms: ["창문 닫음"] },
+      });
+    }
+    expect(parseReportBody({ ...base, symptoms: "두통" })).toMatchObject({ ok: true, input: { symptoms: [] } });
   });
   it("odor_type이 없거나 이상하면 알 수 없음", () => {
     expect(parseReportBody({ ...base, odor_type: "???" })).toMatchObject({ ok: true, input: { odor_type: "알 수 없음" } });
@@ -125,6 +141,37 @@ describe("FR-5: 저장과 중복", () => {
     );
     expect(row).toEqual({ text_masked: null, consent_version: CONSENT_VERSION, intensity_src: "button" });
     expect(JSON.stringify((await db.query("SELECT * FROM reports")).rows)).not.toContain("1234");
+  });
+});
+
+describe("특이사항 저장", () => {
+  it("새 제보의 특이사항을 저장하고 목록에 보여 준다", async () => {
+    const parsed = parseReportBody({ ...base, symptoms: ["창문 닫음", "잠 못 잠", "아무말"] });
+    if (!parsed.ok) throw new Error("parse");
+    await submitReport(db, parsed.input, at("19:00"));
+    const [r] = await listReports(db, "2026-11-03");
+    expect(r.symptoms).toEqual(["창문 닫음", "잠 못 잠"]);
+  });
+  it("몸 상태 항목은 동의가 있으면 저장하지만 공개 목록에는 나오지 않는다", async () => {
+    const parsed = parseReportBody({ ...base, health_consent: true, symptoms: ["두통", "창문 닫음"] });
+    if (!parsed.ok) throw new Error("parse");
+    await submitReport(db, parsed.input, at("19:00"));
+    const { rows } = await db.query<{ symptoms: string[] }>(`SELECT symptoms FROM reports`);
+    expect(rows[0].symptoms).toEqual(["두통", "창문 닫음"]);
+    const [r] = await listReports(db, "2026-11-03");
+    expect(r.symptoms).toEqual(["창문 닫음"]);
+  });
+  it("저장된 값이 화이트리스트 밖(옛 시드 값 등)이어도 공개하지 않는다", async () => {
+    await submitReport(db, { ...base, symptoms: ["숨 막힘", "구역질", "잠 못 잠"] }, at("19:00"));
+    const [r] = await listReports(db, "2026-11-03");
+    expect(r.symptoms).toEqual(["잠 못 잠"]);
+  });
+  it("병합되면 나중 제보의 특이사항으로 바뀐다", async () => {
+    await submitReport(db, { ...base, symptoms: ["창문 닫음"] }, at("19:00"));
+    const second = await submitReport(db, { ...base, symptoms: ["잠 못 잠"] }, at("19:10"));
+    expect(second).toMatchObject({ ok: true, merged: true });
+    const [r] = await listReports(db, "2026-11-03");
+    expect(r.symptoms).toEqual(["잠 못 잠"]);
   });
 });
 

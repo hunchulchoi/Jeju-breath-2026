@@ -36,37 +36,50 @@ export default function OdorMap({
 
 export function Legend({ withMe = false, withAir = false, withWeather = false }: { withMe?: boolean; withAir?: boolean; withWeather?: boolean }) {
   const items = [1, 2, 3, 4, 5];
+  const second = withMe || withAir || withWeather;
   return (
-    <div className="legend" aria-label="범례">
-      {items.map((n) => (
-        <span key={n}>
-          <span className="dot" style={{ background: INTENSITY_COLORS[n], color: INTENSITY_TEXT[n] }}>
-            {n}
+    <div className="legend-groups" aria-label="범례">
+      <div className="legend-group">
+        <h3>악취 세기</h3>
+        <div className="legend">
+          {items.map((n) => (
+            <span key={n}>
+              <span className="dot" style={{ background: INTENSITY_COLORS[n], color: INTENSITY_TEXT[n] }}>
+                {n}
+              </span>
+              {INTENSITY_LABELS[n].short}
+            </span>
+          ))}
+          <span>
+            <span className="dot" style={{ background: REVIEW_COLOR }}>?</span>
+            확인 필요
           </span>
-          {INTENSITY_LABELS[n].short}
-        </span>
-      ))}
-      <span>
-        <span className="dot" style={{ background: REVIEW_COLOR }}>?</span>
-        확인 필요
-      </span>
-      {withMe ? (
-        <span>
-          <span className="dot" style={{ background: "#2563eb", border: "3px solid #fff", boxShadow: "0 0 0 1px #2563eb" }} />
-          내 위치
-        </span>
-      ) : null}
-      {withAir ? (
-        <span>
-          <span className="air-swatch" aria-hidden="true" />
-          대기질 측정소
-        </span>
-      ) : null}
-      {withWeather ? (
-        <span>
-          <span className="wind-swatch" aria-hidden="true">↗</span>
-          바람(불어 가는 쪽)
-        </span>
+        </div>
+      </div>
+      {second ? (
+        <div className="legend-group">
+          <h3>{withMe ? "대기질·바람·내 위치" : "대기질·바람"}</h3>
+          <div className="legend">
+            {withMe ? (
+              <span>
+                <span className="dot" style={{ background: "#2563eb", border: "3px solid #fff", boxShadow: "0 0 0 1px #2563eb" }} />
+                내 위치
+              </span>
+            ) : null}
+            {withAir ? (
+              <span>
+                <span className="air-swatch" aria-hidden="true" />
+                대기질 측정소
+              </span>
+            ) : null}
+            {withWeather ? (
+              <span>
+                <span className="wind-swatch" aria-hidden="true">↗</span>
+                바람(불어 가는 쪽)
+              </span>
+            ) : null}
+          </div>
+        </div>
       ) : null}
     </div>
   );

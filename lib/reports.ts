@@ -13,6 +13,8 @@ import {
 import { dayRange, seoulDay, toSeoulISO } from "./time";
 import {
   CONSENT_VERSION,
+  HEALTH_CHOICES,
+  IMPACT_CHOICES,
   isOdorType,
   type OdorType,
   type PublicReport,
@@ -29,6 +31,8 @@ export interface ReportInput {
   accuracy?: number;
   intensity: number;
   odor_type: OdorType;
+  /** 특이사항 칩(생활 불편, 그리고 health_consent일 때 몸 상태. 중복 없음). 없으면 [] */
+  symptoms?: string[];
   /** 동의 문구 버전. CONSENT_VERSION과 같아야 한다 */
   consent_version: string;
 }
@@ -36,6 +40,16 @@ export interface ReportInput {
 export type ParseResult =
   | { ok: true; input: ReportInput }
   | { ok: false; status: 400; error: string };
+
+/**
+ * 화이트리스트 밖 문자열은 버리고 중복을 없앤다.
+ * 몸 상태 항목(HEALTH_CHOICES)은 healthConsent가 true일 때만 남긴다.
+ */
+export function cleanSymptoms(v: unknown, healthConsent = false): string[] {
+  if (!Array.isArray(v)) return [];
+  const allowed: readonly string[] = healthConsent ? [...IMPACT_CHOICES, ...HEALTH_CHOICES] : IMPACT_CHOICES;
+  return [...new Set(v.filter((x): x is string => typeof x === "string" && allowed.includes(x)))].slice(0, allowed.length);
+}
 
 /** API 요청 본문을 검사한다. 위치 검사는 submitReport에서 따로 한다. text 등 모르는 필드는 무시한다. */
 export function parseReportBody(body: unknown): ParseResult {
@@ -64,6 +78,7 @@ export function parseReportBody(body: unknown): ParseResult {
       accuracy: typeof b.accuracy === "number" ? b.accuracy : undefined,
       intensity,
       odor_type: isOdorType(b.odor_type) ? b.odor_type : "알 수 없음",
+      symptoms: cleanSymptoms(b.symptoms, b.health_consent === true),
       consent_version: CONSENT_VERSION,
     },
   };
@@ -113,10 +128,10 @@ export async function submitReport(db: DB, input: ReportInput, now?: Date): Prom
     if (dup) {
       // 나중 제보로 강도·종류를 갱신하고 1건으로 묶는다
       const { rows: updated } = await q.query<{ needs_review: boolean; reported_at: Date }>(
-        `UPDATE reports SET intensity = $1, odor_type = $2, consent_version = $3, merged_count = merged_count + 1
+        `UPDATE reports SET intensity = $1, odor_type = $2, symptoms = $5::jsonb, consent_version = $3, merged_count = merged_count + 1
          WHERE id = $4
          RETURNING needs_review, reported_at`,
-        [input.intensity, input.odor_type, input.consent_version, dup.id],
+        [input.intensity, input.odor_type, input.consent_version, dup.id, JSON.stringify(input.symptoms ?? [])],
       );
       return {
         ok: true,
@@ -131,8 +146,8 @@ export async function submitReport(db: DB, input: ReportInput, now?: Date): Prom
     const needsReview = checkSuspicious(point, at, priors) !== null;
     const { rows: inserted } = await q.query<{ id: number }>(
       `INSERT INTO reports (user_hash, intensity, intensity_src, odor_type, consent_version,
-         grid_lat, grid_lng, raw_lat, raw_lng, needs_review, reported_at)
-       VALUES ($1, $2, 'button', $3, $4, $5, $6, $7, $8, $9, $10)
+         grid_lat, grid_lng, raw_lat, raw_lng, needs_review, reported_at, symptoms)
+       VALUES ($1, $2, 'button', $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
        RETURNING id`,
       [
         userHash,
@@ -145,6 +160,7 @@ export async function submitReport(db: DB, input: ReportInput, now?: Date): Prom
         point.lng,
         needsReview,
         at,
+        JSON.stringify(input.symptoms ?? []),
       ],
     );
     const id = inserted[0].id;
@@ -240,7 +256,7 @@ export async function listReports(db: Queryable, day: string): Promise<PublicRep
     id: r.id,
     intensity: r.intensity,
     odor_type: r.odor_type,
-    symptoms: stringArray(r.symptoms),
+    symptoms: publicSymptoms(r.symptoms),
     grid_lat: r.grid_lat,
     grid_lng: r.grid_lng,
     needs_review: r.needs_review,
@@ -251,8 +267,10 @@ export async function listReports(db: Queryable, day: string): Promise<PublicRep
   }));
 }
 
-function stringArray(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+/** 공개 API에는 생활 불편 항목만 내보낸다 (몸 상태나 화이트리스트 밖 옛 값은 모두 거른다) */
+function publicSymptoms(v: unknown): string[] {
+  const allowed: readonly string[] = IMPACT_CHOICES;
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && allowed.includes(x)) : [];
 }
 
 export async function getSummary(db: Queryable, day: string): Promise<Summary> {

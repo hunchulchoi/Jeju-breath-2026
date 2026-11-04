@@ -2,16 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import OdorMap, { Legend } from "../components/OdorMap";
-import { WeatherSource, WeatherToggle, WindSummary, useShowWeather, useWeather } from "../components/WeatherToggle";
-import { AirSource, AirToggle, useAirStations, useShowAir } from "../components/AirToggle";
+import OdorMap from "../components/OdorMap";
+import { MapSettings } from "../components/MapSettings";
+import { useShowWeather, useWeather } from "../components/WeatherToggle";
+import { useAirStations, useShowAir } from "../components/AirToggle";
 import { TopBar } from "../components/TopBar";
 import ConsentStep from "./ConsentStep";
-import { hasConsent, saveConsent } from "../components/useConsent";
+import { hasConsent, hasHealthConsent, saveConsent, saveHealthConsent } from "../components/useConsent";
 import { useMyPosition } from "../components/useMyPosition";
 import { distanceMeters, RULES } from "@/lib/rules";
 import { formatTime } from "@/lib/time";
-import { CONSENT_VERSION, INTENSITY_COLORS, INTENSITY_LABELS, INTENSITY_TEXT, type OdorType, type PublicReport, type Summary, ODOR_DISPLAY } from "@/lib/types";
+import { CONSENT_VERSION, INTENSITY_COLORS, INTENSITY_LABELS, INTENSITY_TEXT, type OdorType, type PublicReport, type Summary, ODOR_DISPLAY, IMPACT_CHOICES, HEALTH_CHOICES } from "@/lib/types";
 
 // 시연 모드 테스트 좌표 (애월읍)
 const DEMO_COORDS = { lat: 33.4262, lng: 126.3361, accuracy: 15 };
@@ -37,6 +38,14 @@ const ODOR_CHOICES: { icon: string; value: OdorType; hint?: string }[] = [
   { icon: "❓", value: "알 수 없음" },
 ];
 
+const STAGE_LABELS = ["위치", "냄새 세기", "냄새 종류", "사진·특이사항"] as const;
+const STAGE_TITLES: Record<1 | 2 | 3 | 4, string> = {
+  1: "내 위치를 확인해 주세요",
+  2: "지금 냄새는 어느 정도인가요?",
+  3: "냄새는 어떤 종류인가요?",
+  4: "사진과 특이사항을 더해 주세요",
+};
+
 type Step = "init" | "consent" | "main" | "saving" | "done";
 
 
@@ -48,6 +57,7 @@ interface Saved {
   reported_at: string;
   intensity: number;
   odor_type: OdorType;
+  symptoms: string[];
   photo: "saved" | "invalid" | "too_large" | "limit" | "failed" | null;
 }
 
@@ -112,6 +122,12 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
   const [summary, setSummary] = useState<Summary | null>(null);
   const [intensity, setIntensity] = useState<number | null>(null);
   const [odor, setOdor] = useState<OdorType>("알 수 없음");
+  const [odorPicked, setOdorPicked] = useState(false);
+  const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [healthConsent, setHealthConsent] = useState(false);
+  const [stage, setStage] = useState<1 | 2 | 3 | 4>(1);
+  // 선택 표시가 잠깐 보인 뒤 다음 단계로 넘어가는 타이머
+  const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saved, setSaved] = useState<Saved | null>(null);
   const [submitError, setSubmitError] = useState("");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -131,13 +147,16 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
 
   // 저장된 동의가 현재 문구 버전과 같으면 안내·동의를 건너뛴다
   useEffect(() => {
+    setHealthConsent(hasHealthConsent());
     setStep(hasConsent() ? "main" : "consent");
   }, []);
 
   // 단계가 바뀌면 화면 읽기 프로그램이 새 안내를 읽도록 제목으로 초점을 옮긴다
   useEffect(() => {
     if (step !== "init") headingRef.current?.focus();
-  }, [step]);
+  }, [step, stage]);
+
+  useEffect(() => clearAdvance, []);
 
   // 제보 화면에 처음 들어올 때 한 번만 센다
   useEffect(() => {
@@ -188,6 +207,36 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
     onFail: postLocationFailure,
   });
 
+  function clearAdvance() {
+    if (advanceTimer.current) clearTimeout(advanceTimer.current);
+    advanceTimer.current = null;
+  }
+
+  function goStage(n: number) {
+    clearAdvance();
+    setStage(Math.min(4, Math.max(1, n)) as 1 | 2 | 3 | 4);
+  }
+
+  // 다른 단계에서 위치를 다시 받다가 실패하면, 안내와 [다시 시도]가 있는 1단계로 돌아간다 (Codex 리뷰)
+  useEffect(() => {
+    if (loc === "error" && stage !== 1) goStage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc]);
+
+  // 세기를 고르면 0.3초 뒤 다음 단계로. 5는 119 안내를 읽을 수 있게 자동으로 넘어가지 않는다
+  function pickIntensity(n: number) {
+    setIntensity(n);
+    clearAdvance();
+    if (n !== 5) advanceTimer.current = setTimeout(() => goStage(3), 300);
+  }
+
+  function pickOdor(v: OdorType) {
+    setOdor(v);
+    setOdorPicked(true);
+    clearAdvance();
+    advanceTimer.current = setTimeout(() => goStage(4), 300);
+  }
+
   async function pickPhoto(file: File | undefined) {
     setPhotoError("");
     if (!file) return;
@@ -227,6 +276,28 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
       ? `오늘 제보 ${summary.total}건 · 강도 4 이상 ${summary.high_intensity}건`
       : "오늘 제보를 불러오는 중이에요";
 
+  function chipGroup(choices: readonly string[], label: string) {
+    return (
+      <div className="chips" role="group" aria-label={label}>
+        {choices.map((c) => {
+          const on = symptoms.includes(c);
+          return (
+            <button
+              key={c}
+              type="button"
+              className={`chip${on ? " selected" : ""}`}
+              aria-pressed={on}
+              onClick={() => setSymptoms((cur) => (on ? cur.filter((x) => x !== c) : [...cur, c]))}
+            >
+              {on ? "✓ " : ""}
+              {c}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
   function submit() {
     if (intensity === null || photoBusy) return;
     return send(intensity, odor, photoRef.current);
@@ -243,6 +314,9 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
     const position = coords;
     setStep("saving");
     setSubmitError("");
+    const sentSymptoms = symptoms.filter((x) =>
+      (IMPACT_CHOICES as readonly string[]).includes(x) || (healthConsent && (HEALTH_CHOICES as readonly string[]).includes(x)),
+    );
     const data = JSON.stringify({
       user_id: getUserId(),
       lat: position.lat,
@@ -250,6 +324,8 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
       accuracy: position.accuracy,
       intensity,
       odor_type: odor,
+      symptoms: sentSymptoms,
+      health_consent: healthConsent,
       consent_version: CONSENT_VERSION,
     });
     let init: RequestInit;
@@ -272,11 +348,14 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
             : "저장 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.",
         );
         // 위치가 거절되면 같은 좌표를 다시 보내지 않도록 위치를 새로 받는다 (Codex 리뷰)
-        if (res.status === 422) setLocTry((n) => n + 1);
+        if (res.status === 422) {
+          setLocTry((n) => n + 1);
+          setStage(1);
+        }
         setStep("main");
         return;
       }
-      setSaved({ ...body, intensity, odor_type: odor, photo: body.photo ?? null });
+      setSaved({ ...body, intensity, odor_type: odor, symptoms: sentSymptoms, photo: body.photo ?? null });
       setStep("done");
     } catch {
       setSubmitError("저장 중 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.");
@@ -290,6 +369,10 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
     setSaved(null);
     setIntensity(null);
     setOdor("알 수 없음");
+    setOdorPicked(false);
+    setSymptoms([]);
+    clearAdvance();
+    setStage(1);
     setSubmitError("");
     setShowHelp(false);
     setReports(null);
@@ -307,8 +390,8 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
         badges={
           showTestCoords || hasDemoData ? (
             <>
-              {showTestCoords ? <span className="badge">시연 모드: 테스트 좌표</span> : null}
-              {hasDemoData ? <span className="badge">시연 모드: 가상 데이터</span> : null}
+              {showTestCoords ? <span className="badge">시연용 테스트 좌표</span> : null}
+              {hasDemoData ? <span className="badge">시연용 가상 데이터</span> : null}
             </>
           ) : null
         }
@@ -318,8 +401,11 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
         <ConsentStep
           ref={headingRef}
           reviewing={reviewing}
-          onAgree={() => {
+          onAgree={({ health }) => {
             saveConsent();
+            saveHealthConsent(health);
+            setHealthConsent(health);
+            if (!health) setSymptoms((cur) => cur.filter((x) => !(HEALTH_CHOICES as readonly string[]).includes(x)));
             setReviewing(false);
             setStep("main");
           }}
@@ -327,31 +413,51 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
       ) : null}
 
       {step === "main" || step === "saving" ? (
-        <section className="stack" aria-busy={step === "saving"}>
-          <h1 ref={headingRef} tabIndex={-1}>
-            내 위치를 확인하고 냄새를 알려 주세요
-          </h1>
+        <section className="stack sections" aria-busy={step === "saving"}>
+          <div className="group">
+            <h1 ref={headingRef} tabIndex={-1} style={{ margin: 0 }}>
+              {STAGE_TITLES[stage]}
+            </h1>
+            <ol className="stepper" aria-label="제보 단계">
+              {STAGE_LABELS.map((label, i) => {
+                const n = i + 1;
+                const state = n < stage ? "done" : n === stage ? "current" : "todo";
+                return (
+                  <li key={label} className={`step ${state}`} aria-current={state === "current" ? "step" : undefined}>
+                    {state === "done" ? (
+                      <button
+                        type="button"
+                        className="step-dot"
+                        disabled={step === "saving"}
+                        aria-label={`${n}단계 ${label}으로 돌아가기, 완료`}
+                        onClick={() => goStage(n)}
+                      >
+                        <span aria-hidden="true">✓</span>
+                      </button>
+                    ) : (
+                      <span className="step-dot" aria-hidden="true">
+                        {n}
+                      </span>
+                    )}
+                    <span className="visually-hidden">
+                      {state === "todo" ? `${n}단계 ${label}, 아직 안 했어요` : state === "current" ? label : ""}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+            <p className="step-now" aria-hidden="true">
+              {stage}/{STAGE_LABELS.length} {STAGE_LABELS[stage - 1]}
+            </p>
+          </div>
 
-          <p className="loc-status" role="status" aria-live="polite">
-            {loc === "loading" ? "내 위치를 확인하고 있어요" : null}
-            {loc === "ok" ? "내 위치를 확인했어요. 지도의 파란 점이 내 위치예요." : null}
-            {loc === "error" ? "위치를 확인하지 못해 제보할 수 없어요." : null}
-          </p>
-
-          {demoMode ? (
-            <label className="card" style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={useDemoCoords}
-                onChange={(e) => setUseDemoCoords(e.target.checked)}
-                style={{ width: 24, height: 24 }}
-              />
-              <span>
-                테스트 좌표 사용 <span className="muted small">(시연 모드, 애월읍)</span>
-              </span>
-            </label>
-          ) : null}
-
+          {stage === 1 ? (
+            <>
+              <p className="loc-status" role="status" aria-live="polite">
+                {loc === "loading" ? "내 위치를 확인하고 있어요" : null}
+                {loc === "ok" ? "내 위치를 확인했어요. 파란 점이 내 위치예요." : null}
+                {loc === "error" ? "위치를 확인하지 못해 제보할 수 없어요." : null}
+              </p>
           {loc === "error" ? (
             <div className="stack">
               <p>밖으로 나가 휴대폰의 위치 권한을 켠 뒤 다시 눌러 주세요.</p>
@@ -388,81 +494,129 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
             </div>
           ) : null}
 
-          <AirToggle show={showAir} onChange={setShowAir} failed={airFailed} />
-          <WeatherToggle show={showWeather} onChange={setShowWeather} failed={weatherFailed} />
-          {showWeather ? <WindSummary points={weather} origin={coords} /> : null}
-          <OdorMap
-            kakaoKey={kakaoKey}
-            reports={reports}
-            air={showAir ? air : undefined}
-            weather={showWeather ? weather : undefined}
-            me={coords}
-            className="map report-map"
-            meToo={{ origin: loc === "ok" ? coords : null, onPick: submitMeToo, disabled: step === "saving" }}
-          />
-          <Legend withMe withAir={showAir} withWeather={showWeather} />
-          {showAir ? <AirSource /> : null}
-          {showWeather ? <WeatherSource source={weatherSource} /> : null}
+          <div className="group">
+            <OdorMap
+              kakaoKey={kakaoKey}
+              reports={reports}
+              air={showAir ? air : undefined}
+              weather={showWeather ? weather : undefined}
+              me={coords}
+              className="map report-map"
+              meToo={{ origin: loc === "ok" ? coords : null, onPick: submitMeToo, disabled: step === "saving" }}
+            />
+            <MapSettings
+              showAir={showAir}
+              onAir={setShowAir}
+              airFailed={airFailed}
+              showWeather={showWeather}
+              onWeather={setShowWeather}
+              weatherFailed={weatherFailed}
+              weatherSource={weatherSource}
+              withMe
+              after={
+                demoMode ? (
+                  <div className="group">
+                    <h3>시연 설정</h3>
+                    <label className="check-row">
+                      <input type="checkbox" checked={useDemoCoords} onChange={(e) => setUseDemoCoords(e.target.checked)} />
+                      <span>
+                        테스트 좌표 사용 <span className="muted small">(애월읍)</span>
+                      </span>
+                    </label>
+                  </div>
+                ) : null
+              }
+            />
+          </div>
           <p className="summary" aria-live="polite">
             {summaryText}
           </p>
 
-          <h2 id="intensity-title">지금 냄새는 어느 정도인가요?</h2>
-          <div className="intensity-grid" role="group" aria-labelledby="intensity-title">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                className={`intensity-btn${intensity === n ? " selected" : ""}`}
-                style={{ background: INTENSITY_COLORS[n], color: INTENSITY_TEXT[n] }}
-                aria-pressed={intensity === n}
-                onClick={() => setIntensity(n)}
-              >
-                <span className="intensity-num" aria-hidden="true">
-                  {n}
-                </span>
-                <span className="intensity-text">
-                  <strong>{INTENSITY_LABELS[n].short}</strong>
-                  <span className="intensity-sep"> · </span>
-                  <span>{INTENSITY_LABELS[n].full}</span>
-                </span>
-                {intensity === n ? (
-                  <span className="intensity-check" aria-hidden="true">
-                    ✓
-                  </span>
-                ) : null}
-              </button>
-            ))}
-          </div>
-          <div aria-live="polite">
-            {intensity === 5 ? (
-              <Emergency119
-                text="숨쉬기 힘들거나 어지럽고 메스꺼우면 바로 119에 전화하세요."
-                note="제보는 전화와 따로 보낼 수 있어요."
-              />
-            ) : null}
-          </div>
+          <p className="muted small" style={{ margin: 0 }}>
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => {
+                setReviewing(true);
+                setStep("consent");
+              }}
+            >
+              동의 내용 보기
+            </button>
+          </p>
 
-          <h2 id="odor-title">
-            냄새 종류 <span className="muted small">(선택 사항)</span>
-          </h2>
-          <div className="odor-grid" role="group" aria-labelledby="odor-title">
-            {ODOR_CHOICES.map((c) => (
-              <button
-                key={c.value}
-                type="button"
-                className={`choice-btn${odor === c.value ? " selected" : ""}`}
-                aria-pressed={odor === c.value}
-                onClick={() => setOdor(c.value)}
-              >
-                <span className="choice-icon" aria-hidden="true">
-                  {c.icon}
-                </span>
-                <span>{ODOR_DISPLAY[c.value]}</span>
-                {c.hint ? <span className="choice-hint">{c.hint}</span> : null}
-              </button>
-            ))}
-          </div>
+            </>
+          ) : null}
+
+          {stage === 2 ? (
+            <>
+              <div className="intensity-grid" role="group" aria-label="냄새 세기">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`intensity-btn${intensity === n ? " selected" : ""}`}
+                    style={{ background: INTENSITY_COLORS[n], color: INTENSITY_TEXT[n] }}
+                    aria-pressed={intensity === n}
+                    onClick={() => pickIntensity(n)}
+                  >
+                    <span className="intensity-num" aria-hidden="true">
+                      {n}
+                    </span>
+                    <span className="intensity-text">
+                      <strong>{INTENSITY_LABELS[n].short}</strong>
+                      <span>{INTENSITY_LABELS[n].full}</span>
+                    </span>
+                    {intensity === n ? (
+                      <span className="intensity-check" aria-hidden="true">
+                        ✓
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+              <div aria-live="polite">
+                {intensity === 5 ? (
+                  <Emergency119
+                    text="숨쉬기 힘들거나 어지럽고 메스꺼우면 바로 119에 전화하세요."
+                    note="제보는 전화와 따로 보낼 수 있어요."
+                  />
+                ) : null}
+              </div>
+            </>
+          ) : null}
+
+          {stage === 3 ? (
+            <div className="odor-grid" role="group" aria-label="냄새 종류">
+              {ODOR_CHOICES.map((c) => (
+                <button
+                  key={c.value}
+                  type="button"
+                  className={`choice-btn${odorPicked && odor === c.value ? " selected" : ""}`}
+                  aria-pressed={odorPicked && odor === c.value}
+                  onClick={() => pickOdor(c.value)}
+                >
+                  <span className="choice-icon" aria-hidden="true">
+                    {c.icon}
+                  </span>
+                  <span>{ODOR_DISPLAY[c.value]}</span>
+                  {c.hint ? <span className="choice-hint">{c.hint}</span> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {stage === 4 ? (
+            <>
+              <p className="card" style={{ margin: 0 }}>
+                <button type="button" className="link-btn" onClick={() => goStage(2)}>
+                  세기 {intensity} · {intensity ? INTENSITY_LABELS[intensity].short : ""}
+                </button>
+                {" / "}
+                <button type="button" className="link-btn" onClick={() => goStage(3)}>
+                  {ODOR_DISPLAY[odor]}
+                </button>
+              </p>
 
           <div className="photo-pick">
             {photoUrl ? (
@@ -503,34 +657,84 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
             </p>
           </div>
 
-          {submitError ? (
-            <p className="notice" role="alert">
-              {submitError}
-            </p>
+
+              <div className="group">
+                <h2 id="symptom-title">
+                  특이사항 <span className="muted small">(선택 사항, 여러 개 고를 수 있어요)</span>
+                </h2>
+                <p className="muted small" style={{ margin: "0 0 8px" }}>
+                  생활 불편 (지도에 공개돼요)
+                </p>
+                {chipGroup(IMPACT_CHOICES, "생활 불편")}
+                {healthConsent ? (
+                  <>
+                    <p className="muted small" style={{ margin: "12px 0 8px" }}>
+                      몸 상태 (지도에는 공개 안 돼요)
+                    </p>
+                    {chipGroup(HEALTH_CHOICES, "몸 상태")}
+                  </>
+                ) : (
+                  <p className="muted small" style={{ margin: "12px 0 0" }}>
+                    몸 상태(두통 등)를 남기려면 [선택] 몸 상태 정보 동의가 필요해요.{" "}
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => {
+                        setReviewing(true);
+                        setStep("consent");
+                      }}
+                    >
+                      동의 내용 보기
+                    </button>
+                  </p>
+                )}
+              </div>
+            </>
           ) : null}
-          <button className="btn" type="button" disabled={!canSubmit || step === "saving"} onClick={submit}>
-            {step === "saving"
-              ? "제보를 저장하고 있어요"
-              : photoBusy
-                ? "사진을 준비하고 있어요"
-                : loc !== "ok"
-                  ? "위치를 확인하면 보낼 수 있어요"
-                  : intensity === null
-                    ? "냄새 단계를 먼저 골라 주세요"
-                    : "제보 보내기"}
-          </button>
-          <p className="muted small">
-            <button
-              type="button"
-              className="link-btn"
-              onClick={() => {
-                setReviewing(true);
-                setStep("consent");
-              }}
-            >
-              동의 내용 보기
-            </button>
-          </p>
+
+          <div className="submit-bar">
+            {submitError ? (
+              <p className="notice" role="alert">
+                {submitError}
+              </p>
+            ) : null}
+            <div className="bar-row">
+              {stage > 1 ? (
+                <button className="btn secondary bar-prev" type="button" disabled={step === "saving"} onClick={() => goStage(stage - 1)}>
+                  이전
+                </button>
+              ) : null}
+              {stage === 1 ? (
+                <button className="btn" type="button" disabled={!(loc === "ok" && coords)} onClick={() => goStage(2)}>
+                  {loc === "ok" && coords ? "다음" : "위치를 확인하면 다음으로 갈 수 있어요"}
+                </button>
+              ) : null}
+              {stage === 2 ? (
+                <button className="btn" type="button" disabled={intensity === null} onClick={() => goStage(3)}>
+                  {intensity === null ? "세기를 먼저 골라 주세요" : "다음"}
+                </button>
+              ) : null}
+              {stage === 3 ? (
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => {
+                    clearAdvance();
+                    setOdor("알 수 없음");
+                    setOdorPicked(true);
+                    goStage(4);
+                  }}
+                >
+                  건너뛰기 →
+                </button>
+              ) : null}
+              {stage === 4 ? (
+                <button className="btn" type="button" disabled={!canSubmit || step === "saving"} onClick={submit}>
+                  {step === "saving" ? "제보를 저장하고 있어요" : photoBusy ? "사진을 준비하고 있어요" : "제보 보내기"}
+                </button>
+              ) : null}
+            </div>
+          </div>
         </section>
       ) : null}
 
@@ -549,6 +753,18 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
               </dd>
               <dt>냄새 종류</dt>
               <dd>{ODOR_DISPLAY[saved.odor_type]}</dd>
+              <dt>특이사항</dt>
+              <dd>
+                {saved.symptoms.length === 0 ? "없음" : null}
+                {saved.symptoms.filter((x) => (IMPACT_CHOICES as readonly string[]).includes(x)).join(", ")}
+                {saved.symptoms.some((x) => (HEALTH_CHOICES as readonly string[]).includes(x)) ? (
+                  <>
+                    {saved.symptoms.some((x) => (IMPACT_CHOICES as readonly string[]).includes(x)) ? " · " : ""}
+                    {saved.symptoms.filter((x) => (HEALTH_CHOICES as readonly string[]).includes(x)).join(", ")}{" "}
+                    <span className="muted small">(지도에는 공개 안 됨)</span>
+                  </>
+                ) : null}
+              </dd>
             </dl>
             <p style={{ marginBottom: 0 }}>
               오늘 주변(1km) 제보 <strong>{saved.today_nearby_count}건</strong>
@@ -558,13 +774,13 @@ export default function ReportFlow({ demoMode, today, kakaoKey }: { demoMode: bo
           {saved.photo === "saved" ? <p className="muted">사진도 함께 저장했어요.</p> : null}
           {saved.photo && saved.photo !== "saved" ? <p className="notice">{PHOTO_MESSAGES[saved.photo]}</p> : null}
           {saved.intensity === 5 ? <Emergency119 text="숨쉬기 힘들거나 몸이 불편하면 바로 119에 전화하세요." /> : null}
-          <p className="muted small">{SAFETY_TEXT}</p>
           <Link href="/map?from=report" className="btn">
             오늘 지도 보기
           </Link>
           <button className="btn secondary" type="button" onClick={restart}>
-            처음으로
+            다시 제보하기
           </button>
+          <p className="muted small">{SAFETY_TEXT}</p>
         </section>
       ) : null}
     </main>

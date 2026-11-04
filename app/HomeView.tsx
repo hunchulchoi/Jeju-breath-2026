@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import ConsentStep from "./report/ConsentStep";
-import { hasConsent, saveConsent } from "./components/useConsent";
+import { hasConsent, saveConsent, saveHealthConsent } from "./components/useConsent";
 import { useMyPosition } from "./components/useMyPosition";
 import { TodayMap } from "./components/TodayMap";
 import { TopBar } from "./components/TopBar";
@@ -28,8 +28,9 @@ export default function HomeView({ today, kakaoKey }: { today: string; kakaoKey:
           </button>
         </p>
         <ConsentStep
-          onAgree={() => {
+          onAgree={({ health }) => {
             saveConsent();
+            saveHealthConsent(health);
             setConsented(true);
             setAsking(false);
           }}
@@ -41,7 +42,7 @@ export default function HomeView({ today, kakaoKey }: { today: string; kakaoKey:
 
   return (
     <main className="container">
-      <TopBar badges={hasDemo ? <span className="badge">시연 모드: 가상 데이터</span> : null} />
+      <TopBar badges={hasDemo ? <span className="badge">시연용 가상 데이터</span> : null} />
       <h1>악취가 나면 알려주세요</h1>
       <p className="muted home-lead">위치와 냄새 세기만 고르면 돼요.</p>
 
@@ -53,9 +54,6 @@ export default function HomeView({ today, kakaoKey }: { today: string; kakaoKey:
         loc={loc}
         onAskLocation={consented === false ? () => setAsking(true) : undefined}
       />
-      <p className="small home-more">
-        <Link href="/map">범례와 자세한 지도 보기 →</Link>
-      </p>
 
       <p className="summary" aria-live="polite">
         {summary
@@ -67,18 +65,18 @@ export default function HomeView({ today, kakaoKey }: { today: string; kakaoKey:
             : "불러오는 중이에요"}
       </p>
 
-      <div className="stack" style={{ marginTop: 16 }}>
+      <div className="home-actions">
         <Link href="/report" className="btn">
           제보하기
         </Link>
         <Link href="/map" className="btn secondary">
-          지도 크게 보기
+          지도·범례 보기
         </Link>
-        <Link href="/stats" className="btn secondary">
+        <Link href="/stats" className="text-link">
           통계 보기
         </Link>
       </div>
-      <p className="muted small" style={{ marginTop: 24 }}>
+      <p className="muted small" style={{ marginTop: "var(--gap-3)" }}>
         이름이나 연락처는 받지 않아요. 지도에는 약 200m 단위의 대략적인 위치만 보여요.
       </p>
     </main>

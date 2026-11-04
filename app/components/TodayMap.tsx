@@ -55,12 +55,13 @@ export function TodayMap({
           air={showAir ? air : undefined}
           weather={showWeather ? weather : undefined}
         />
-        {onAskLocation ? (
-          <button type="button" className="btn home-locate" onClick={onAskLocation}>
-            내 위치 보기
-          </button>
-        ) : null}
       </div>
+      <p className="map-caption">큰 원 숫자는 냄새 세기, 작은 검은 원은 합쳐진 제보 수예요.</p>
+      {onAskLocation ? (
+        <button type="button" className="btn secondary" style={{ marginTop: "var(--gap-1)" }} onClick={onAskLocation}>
+          내 위치 보기
+        </button>
+      ) : null}
       {loc === "error" ? (
         <p className="muted small" role="status">
           내 위치를 확인하지 못했어요. 지도 가운데 기준으로 보여 드려요.
