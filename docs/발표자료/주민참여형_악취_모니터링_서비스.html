@@ -128,6 +128,12 @@
   .demo-link { position:absolute; right:58px; bottom:31px; min-width:196px; min-height:56px; display:flex; align-items:center; justify-content:center; padding:0 24px; border:1px solid var(--amber); border-radius:10px; color:var(--amber); font-size:24px; text-decoration:none; }
   .demo-link:hover, .demo-link:focus-visible { color:var(--ink); background:var(--amber); outline:3px solid var(--mist); outline-offset:4px; }
   .demo-shot { position:absolute; border-radius:10px; border:1px solid var(--line); object-fit:contain; background:#fff; }
+  /* 캡처 ↔ 실제 화면(iframe) 전환 */
+  .demo-toggle { position:absolute; right:58px; top:51px; z-index:3; min-width:196px; min-height:56px; padding:0 24px; border:1px solid var(--amber); border-radius:10px; background:var(--ink); color:var(--amber); font:inherit; font-size:22px; cursor:pointer; }
+  .demo-toggle:hover, .demo-toggle:focus-visible { color:var(--ink); background:var(--amber); outline:3px solid var(--mist); outline-offset:4px; }
+  .demo-live { position:absolute; z-index:2; border:1px solid var(--line); border-radius:10px; background:#fff; display:none; }
+  .slide.live .demo-live { display:block; }
+  .slide.live .demo-shot { display:none !important; }
   .demo-step { position:absolute; left:58px; width:605px; display:flex; align-items:flex-start; gap:22px; }
   .demo-step .num { flex-shrink:0; }
   .demo-step h3 { font-size:29.3px; line-height:1.3; font-weight:700; margin-bottom:8px; }
@@ -548,7 +554,7 @@
   </section>
 
   <!-- 16. 구현 시연 ② 냄새 제보 -->
-  <section class="slide" data-title="구현 시연 ② 냄새 제보" data-notes="[시연 순서, 약 1분] 홈에서 [제보하기]를 누릅니다. 개인정보와 위치정보에 동의하고, 내 위치를 확인합니다. 냄새 세기 4 [아주 심해요]를 고른 뒤 냄새 종류 [돼지 축사]를 선택합니다. 사진과 생활 불편은 필요한 경우만 고르고 [제보 보내기]를 누릅니다. 접수 화면에서 시각과 선택한 내용, 방금 내 제보가 강조된 지도를 확인합니다.&#10;&#10;[캡처 안내] 예시 위치로 진행한 실제 프런트엔드 화면이며, 화면 속 데이터는 시연용 가상 데이터입니다. 이 캡처에서는 제보를 전송하지 않았습니다. 세기 선택 화면까지의 구현을 보여 줍니다.&#10;&#10;[발표 준비] 현장에서는 위치 권한과 네트워크를 먼저 확인합니다. 직접 제보하는 시연은 준비된 시연 환경에서 진행합니다. 화면이 열리지 않으면 내장된 캡처와 단계 설명으로 이어갑니다. [실제 화면 열기]는 새 탭을 엽니다.&#10;&#10;[구현 근거] app/HomeView.tsx, app/report/ConsentStep.tsx, app/report/ReportFlow.tsx, lib/types.ts, docs/PRD.md 5장.">
+  <section class="slide" data-title="구현 시연 ② 냄새 제보" data-notes="[시연 순서, 약 1분] 홈에서 [제보하기]를 누릅니다. 개인정보와 위치정보에 동의하고, 내 위치를 확인합니다. 냄새 세기 4 [아주 심해요]를 고른 뒤 냄새 종류 [돼지 축사]를 선택합니다. 사진과 생활 불편은 필요한 경우만 고르고 [제보 보내기]를 누릅니다. 접수 화면에서 시각과 선택한 내용, 방금 내 제보가 강조된 지도를 확인합니다.&#10;&#10;[캡처 안내] 예시 위치로 진행한 실제 프런트엔드 화면이며, 화면 속 데이터는 시연용 가상 데이터입니다. 이 캡처에서는 제보를 전송하지 않았습니다. 세기 선택 화면까지의 구현을 보여 줍니다.&#10;&#10;[발표 준비] 현장에서는 위치 권한과 네트워크를 먼저 확인합니다. 직접 제보하는 시연은 준비된 시연 환경에서 진행합니다. 화면이 열리지 않으면 내장된 캡처와 단계 설명으로 이어갑니다. [실제 화면 열기]는 새 탭을 엽니다. 오른쪽 위 [실제 화면 보기]를 누르면 캡처 자리에 실제 화면이 뜨고, [캡처 화면 보기]로 되돌립니다. 실제 화면 안을 누른 뒤에는 방향키가 앱으로 갑니다. 슬라이드 바깥을 한 번 누르면 슬라이드 조작으로 돌아오고, 이 클릭으로는 넘어가지 않습니다.&#10;&#10;[구현 근거] app/HomeView.tsx, app/report/ConsentStep.tsx, app/report/ReportFlow.tsx, lib/types.ts, docs/PRD.md 5장.">
     <h2 class="abs title">구현 시연 ② 냄새 제보</h2>
     <p class="abs implementation-sub">동의한 뒤, 위치와 냄새 세기를 골라 제보합니다</p>
     <div class="demo-step" style="top:186px;width:580px"><span class="num">1</span><div><h3>동의하고 위치 확인</h3><p>개인정보와 위치정보에 동의해요.<br>지도에서 내 위치를 확인해요.</p></div></div>
@@ -763,6 +769,41 @@
     else if (motionPreference.addListener) motionPreference.addListener(onMotionPreferenceChange);
   }
 
+  // 시연 슬라이드: 캡처와 실제 화면(iframe)을 버튼으로 전환한다.
+  // iframe은 처음 누를 때 만든다. 네트워크가 안 되면 다시 눌러 캡처로 돌아간다.
+  slides.forEach(function (slide) {
+    var link = slide.querySelector(".demo-link"), shots = slide.querySelectorAll(".demo-shot");
+    if (!link || !shots.length) return;
+    var route = new URL(link.href, location.href).pathname.replace(/\/+$/, "") || "/";
+    if (route === "/stats") return;
+    var top = Infinity, bottom = 0, right = 0;
+    [].forEach.call(shots, function (img) {
+      var t = parseFloat(img.style.top), h = parseFloat(img.style.height);
+      top = Math.min(top, t); bottom = Math.max(bottom, t + h);
+      right = Math.max(right, parseFloat(img.style.left) + parseFloat(img.style.width));
+    });
+    var w = 375, frame = null, btn = document.createElement("button");
+    btn.type = "button"; btn.className = "demo-toggle"; btn.textContent = "실제 화면 보기";
+    btn.addEventListener("click", function (e) {
+      e.preventDefault(); e.stopPropagation(); frameFocused = false;
+      if (!frame) {
+        frame = document.createElement("iframe");
+        frame.className = "demo-live";
+        frame.title = "제주숨결봇 실제 화면";
+        if (route === "/report") frame.setAttribute("allow", "geolocation; camera");
+        else if (route === "/map") frame.setAttribute("allow", "geolocation");
+        else frame.setAttribute("allow", "geolocation 'none'; camera 'none'");
+        frame.src = link.href;
+        frame.style.cssText = "left:" + (right - w) + "px;top:" + top + "px;width:" + w + "px;height:" + (bottom - top) + "px";
+        slide.appendChild(frame);
+      }
+      var live = slide.classList.toggle("live");
+      btn.textContent = live ? "캡처 화면 보기" : "실제 화면 보기";
+      btn.blur();
+    });
+    slide.appendChild(btn);
+  });
+
   function go(i, back) {
     i = Math.max(0, Math.min(slides.length - 1, i));
     if (i === cur) return;
@@ -837,7 +878,13 @@
     }
   }
   addEventListener("keydown", onKey);
+  // 실제 화면(iframe)에 포커스가 가 있으면, 바깥 첫 클릭은 슬라이드 조작만 되찾고 넘기지 않는다.
+  var frameFocused = false;
+  addEventListener("blur", function () {
+    setTimeout(function () { var a = document.activeElement; frameFocused = !!(a && a.tagName === "IFRAME"); }, 0);
+  });
   addEventListener("click", function (e) {
+    if (frameFocused) { frameFocused = false; if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); return; }
     if (e.defaultPrevented || (e.target.closest && e.target.closest("a, button, input, select, textarea, summary, [contenteditable=true]"))) return;
     next();
   });
